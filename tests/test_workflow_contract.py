@@ -1,6 +1,7 @@
 from pathlib import Path
 
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "eod.yml"
+RECOVERY_WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "publish-existing.yml"
 
 
 def test_expensive_bottom_result_is_checkpointed_before_next() -> None:
@@ -15,3 +16,12 @@ def test_expensive_bottom_result_is_checkpointed_before_next() -> None:
 def test_next_validates_the_exact_orchestrator_session() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     assert "STOCKSCOUT_EXPECTED_SESSION: ${{ steps.guard.outputs.session_date }}" in workflow
+
+
+def test_recovery_skips_telegram_rendering_when_notifications_are_disabled() -> None:
+    workflow = RECOVERY_WORKFLOW.read_text(encoding="utf-8")
+    assert "- name: Render Telegram dry run only when requested" in workflow
+    assert "        if: inputs.notify" in workflow
+    assert "python -m stockscout_unified.cli notify" in workflow
+    eod = WORKFLOW.read_text(encoding="utf-8")
+    assert "      notify: ${{ inputs.notify }}" in eod

@@ -7,6 +7,11 @@ on:
         description: "Verified existing session to publish"
         required: true
         type: string
+      notify:
+        description: "Render the private Telegram dry run after publication"
+        required: false
+        default: false
+        type: boolean
   workflow_dispatch:
     inputs:
       session_date:
@@ -16,6 +21,11 @@ on:
         options:
           - "2026-08-25"
         default: "2026-08-25"
+      notify:
+        description: "Render the private Telegram dry run after publication"
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build-existing:
@@ -194,6 +204,10 @@ jobs:
             --run-id "$RUN_ID" \
             --session-date "$SESSION_DATE"
           python -m stockscout_unified.cli verify --public-dir frontend/public
+
+      - name: Render Telegram dry run only when requested
+        if: inputs.notify
+        run: |
           python -m stockscout_unified.cli notify \
             --public-dir frontend/public \
             --bottom-raw-scan .staging/reuse/bottom.json

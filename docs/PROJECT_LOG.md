@@ -57,3 +57,6 @@
   directory-backed chart verification used by Next and Ryan Original.
 - Added a regression fixture that activates all three isolated modes with the
   production Bottom chart layout and verifies the resulting public pointer.
+- Recovery now propagates `notify=false` into the reusable workflow and skips
+  Telegram rendering entirely in that case, so a notification-formatting error
+  cannot block an otherwise verified scan-free publication.

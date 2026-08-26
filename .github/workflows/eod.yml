@@ -35,6 +35,7 @@ jobs:
     uses: ./.github/workflows/publish-existing.yml
     with:
       session_date: ${{ inputs.scan_date }}
+      notify: ${{ inputs.notify }}
     permissions:
       contents: read
       pages: write
