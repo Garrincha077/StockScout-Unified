@@ -8,7 +8,7 @@ type Mode=typeof modes[number]
 const rows:Record<Mode,Record<string,unknown>>={
   'bottom-fishing':{ticker:'AAA',price:50,stage:2,stageName:'Stage 1 → 2',score:88,focusBlend:91,primarySetup:'RWB squeeze thrust',setupTags:['RWB','Crash Base'],tradeStatus:'entry_ready',entryRiskPct:8,tacticalStopLevel:46,tradePlan:{status:'entry_ready',reasonCodes:['fresh_breakout'],triggerState:'fresh',triggerReferenceLevel:51,entryReferenceLevel:50,structuralInvalidationLevel:46,entryRiskPct:8,extensionAtr:.2,tacticalStopLevel:46,tacticalRiskPct:8,source:'primary',version:1}},
   next:{ticker:'AAA',price:50,stage:2,stageName:'Stage 2',score:73,opportunityScore:96,primarySetup:'Fresh Stage 2',setupTags:['Fresh Stage 2']},
-  'ryan-original':{ticker:'AAA',price:50,stage:2,stageName:'Stage 2',score:84,originalBuyScore:84,originalRunBuySignal:true,primarySetup:'ryan_original_buy',setupTags:['Original buy','Minervini trend template']},
+  'ryan-original':{ticker:'AAA',price:50,stage:2,stageName:'Stage 2',score:84,originalBuyScore:84,originalBuy:true,originalRunBuySignal:true,originalRR:3,originalStopLoss:45,originalRiskPct:10,originalEntryQuality:'excellent',originalTTPasses:8,originalVcpQuality:78,originalSellScore:82,originalSell:true,originalRunSellSignal:true,originalSellSeverity:'high',primarySetup:'ryan_original_buy',setupTags:['Original buy','Minervini trend template'],originalEngine:{model:'original-signal-engine-v1',phase:2,phaseConfidence:88,sourceInputs:{quarterlyData:{revenue:[10,12]}},sourceOutputs:{buy:{reason:'breakout'},sell:{reason:'breakdown'}},phaseInfo:{phase:2,confidence:88},minervini:{passed:8,passes:true},vcp:{quality:78,isVcp:true},breakout:{breakout_type:'Base Breakout',breakout_level:50,volume_confirmed:true},buy:{score:84,isBuy:true,emittedByOriginalRun:true,entryQuality:'excellent',stopLoss:45,riskPct:10,riskReward:3,rewardTarget:65,components:{trend:32,fundamental:30}},sell:{score:82,isSell:true,emittedByOriginalRun:true,severity:'high',breakdownLevel:45,reasons:['Breakdown']}}},
 }
 
 function modeFixture(mode:Mode){
@@ -42,7 +42,7 @@ async function installRoutes(page:Page){
   await page.route('**/data/validation-status.json*',route=>route.fulfill({status:404,body:''}))
 }
 
-test('three modes stay isolated and remain usable in mobile and desktop grid views',async({page},testInfo)=>{
+test('three modes stay isolated and remain usable in mobile and desktop views',async({page})=>{
   await installRoutes(page)
   await page.goto(`/StockScout-Unified/ticker/AAA?run=${runId}&mode=bottom-fishing`)
   await expect(page.locator('.mode-header')).toContainText('Bottom Fishing')
@@ -58,14 +58,15 @@ test('three modes stay isolated and remain usable in mobile and desktop grid vie
   await expect(page).toHaveURL(/mode=next/)
 
   await page.locator('.mode-header nav button').filter({hasText:'Ryan Original'}).click()
-  await expect(page.locator('.dv-detailhead')).toContainText('RYAN BUY')
-  await expect(page.locator('.dv-detailhead')).toContainText('84.0')
+  await expect(page.locator('.ryan-dashboard')).toContainText('Ryan Original')
+  await expect(page.locator('.ryan-summary')).toContainText('Buy Signals')
+  await expect(page.locator('.ryan-summary')).toContainText('Sell Signals')
+  await expect(page.locator('.ryan-detail')).toContainText('Source inputs')
+  await expect(page.locator('.ryan-detail')).toContainText('BUY SCORE ANATOMY')
+  await page.locator('.ryan-tabs button').filter({hasText:'SELL'}).click()
+  await expect(page.locator('.ryan-table')).toContainText('AAA')
+  await expect(page.locator('.ryan-table')).toContainText('high')
   await expect(page).toHaveURL(/mode=ryan-original/)
-
-  await page.locator('.dv-top nav button').filter({hasText:/^Grid$/}).click()
-  const columns=(await page.locator('.dv-chartgrid').evaluate(node=>getComputedStyle(node).gridTemplateColumns)).split(' ').length
-  expect(columns).toBe(testInfo.project.name==='mobile-pixel-5'?1:4)
-  await expect(page.locator('.dv-minicard')).toContainText('ryan_original_buy')
 })
 
 test('a mismatched mode manifest hash never activates partial data',async({page})=>{

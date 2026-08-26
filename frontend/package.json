@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "node --experimental-strip-types --test src/data/*.test.ts src/deepvue/*.test.ts src/owner/*.test.ts src/phase4Review.test.ts",
+    "test": "node --experimental-strip-types --test src/data/*.test.ts src/deepvue/*.test.ts src/owner/*.test.ts src/original/*.test.ts src/phase4Review.test.ts",
     "test:e2e": "playwright test",
     "build": "tsc --noEmit && vite build",
     "check": "npm run test && npm run build",

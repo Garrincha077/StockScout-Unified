@@ -32,6 +32,8 @@ def sample_payload():
                 "originalEngine": {
                     "model": "original-signal-engine-v1",
                     "completeSourceCaptureModel": "legacy-complete-source-capture-v1",
+                    "sourceInputs": {"quarterlyData": {"revenue": [10, 12]}},
+                    "sourceOutputs": {"buy": {"reason": "breakout"}},
                     "buy": {"score": 92, "emittedByOriginalRun": True},
                     "sell": {"emittedByOriginalRun": False},
                     "minervini": {"passes": True},
@@ -137,4 +139,6 @@ def test_publish_preserves_canonical_snapshot_and_writes_versioned_client_artifa
     assert sorted(detail_rows) == sorted(canonical_tickers)
     assert len(list((tmp_path / "legacy" / "details").glob("*.json"))) == 128
     assert detail_rows["AAA"]["originalEngine"] == payload["universe"][0]["originalEngine"]
+    assert detail_rows["AAA"]["originalEngine"]["sourceInputs"]["quarterlyData"]["revenue"] == [10, 12]
+    assert detail_rows["AAA"]["originalEngine"]["sourceOutputs"]["buy"]["reason"] == "breakout"
     assert (tmp_path / "legacy" / "details" / f"{shard_number('AAA'):03d}.json").exists()

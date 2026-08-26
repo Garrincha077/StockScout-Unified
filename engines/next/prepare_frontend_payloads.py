@@ -24,6 +24,11 @@ CORE = DATA_DIR / "core.json"
 MANIFEST = DATA_DIR / "manifest.json"
 LEGACY_SIDECAR = DATA_DIR / "shadow" / "legacy-confirmation.json"
 FILTER_ENGINE = ROOT / "frontend" / "src" / "deepvue" / "filterEngine.ts"
+# The vendored Next source keeps its frontend beside this module, while the
+# unified repository owns one shared frontend at the repository root. Resolve
+# both layouts so payload validation remains portable without changing fields.
+if not FILTER_ENGINE.exists():
+    FILTER_ENGINE = ROOT.parent.parent / "frontend" / "src" / "deepvue" / "filterEngine.ts"
 
 MODEL = "stockscout-client-core-v2"
 MANIFEST_VERSION = 2

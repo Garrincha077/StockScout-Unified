@@ -1,5 +1,6 @@
 import {useState} from 'react'
 import DeepVueTerminal from './DeepVueTerminal'
+import RyanOriginalDashboard from './RyanOriginalDashboard'
 import GroupsPage from './GroupsPage'
 import OwnerAccess from './owner/OwnerAccess'
 import {useStockScoutData} from './data/StockScoutDataProvider'
@@ -39,7 +40,7 @@ export default function Root(){
     {view==='groups'
       ?<GroupsPage onBack={()=>setView('terminal')} onOpenTicker={openTicker}/>
       :<>
-        <DeepVueTerminal/>
+        {mode==='ryan-original'?<RyanOriginalDashboard/>:<DeepVueTerminal/>}
         <button className="dv-groups-launch" onClick={()=>setView('groups')}>◎ Groups</button>
       </>}
   </div>
