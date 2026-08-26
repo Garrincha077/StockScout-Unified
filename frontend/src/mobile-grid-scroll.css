@@ -1,0 +1,39 @@
+.dv-grid-sentinel{width:100%;height:1px;pointer-events:none}.dv-miniload button{border:1px solid #284765;background:#0b1c2c;color:#9fc3e6;border-radius:6px;padding:7px 10px;font-size:9px;cursor:pointer}.dv-miniload button:hover{border-color:#3d82c2;color:#fff}
+
+@media (max-width: 700px) {
+  html,
+  body,
+  #root,
+  .dv-app {
+    min-height: 100%;
+    height: auto;
+    overflow-y: auto;
+    overscroll-behavior-y: auto;
+  }
+
+  .dv-gridview {
+    overflow: visible;
+    height: auto;
+    max-height: none;
+    margin-bottom: 24px;
+  }
+
+  .dv-chartgrid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .dv-minicard {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .dv-minichart,
+  .dv-miniload {
+    height: 190px;
+  }
+}

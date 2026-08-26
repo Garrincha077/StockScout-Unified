@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Opening StockScout Unified…</title></head>
+<body style="margin:0;background:#07111d;color:#c8d8e8;font:14px system-ui;display:grid;place-items:center;min-height:100vh">Opening StockScout Unified…
+<script>
+  (function(){
+    var match=location.pathname.match(/^(.*\/)(?:ticker\/([^/]+))\/?$/i)
+    if(!match){location.replace('./');return}
+    var params=new URLSearchParams(location.search)
+    params.set('ticker',decodeURIComponent(match[2]))
+    location.replace(match[1]+'?'+params.toString())
+  })()
+</script></body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "name": "LEGACY",
+  "description": "Frozen RyanJHamby/stock-screener source execution graph at the moment this fork was created. StockScout discovery logic must never modify these source files or reinterpret their scores.",
+  "upstream_repository": "RyanJHamby/stock-screener",
+  "upstream_commit": "2fce788b7c95e595bdbb012bd35d3a92fcc49e5a",
+  "fork_created_at_utc": "2026-08-17T17:44:22Z",
+  "files": {
+    "run_optimized_scan.py": "9f8c757eec73dbe2dfb4c466b20d137484c625da",
+    "src/screening/optimized_batch_processor.py": "95663695600aa7add6615939487188114a6ef387",
+    "src/screening/signal_engine.py": "3fbfdf32fbab77856bf06546ead38cafa19cbbf3",
+    "src/screening/phase_indicators.py": "491e09fa289adaea680ee3169bfb93c3b22272ca",
+    "src/screening/benchmark.py": "9b00baa4c84999650dc9b172ee013c9b7a7785d2",
+    "src/data/universe_fetcher.py": "6170a981e6f2bcb4ab3d7906d184b0c3f3b284ec",
+    "src/data/fetcher.py": "22205cb91712bddaa8810823c183e86fd2787a1d",
+    "src/data/fundamentals_fetcher.py": "c44d78edd6f90406ced0b0a4b7c25704cd1ff51b",
+    "src/data/enhanced_fundamentals.py": "789791796b8b809e2bdfbe30dbd4ed52b527addc",
+    "src/data/fmp_fetcher.py": "bd3cb451895364e5764cffecaf87677d5c308e42",
+    "src/data/git_storage_fetcher.py": "072d8c53c74c7c97eb4eae378f0a98f62dfd1636"
+  }
+}

@@ -1,0 +1,4 @@
+project_id = "stockscout-unified"
+
+[functions.unified-operations]
+verify_jwt = false

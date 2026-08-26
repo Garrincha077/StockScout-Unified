@@ -19,14 +19,21 @@ build/
 node_modules/
 frontend/dist/
 services/mcp/.vercel/
+frontend/test-results/
+frontend/playwright-report/
+supabase/.temp/
+*.log
 
-# Runtime market and scan data
-data/
-reports/
-reports_benchmark/
-market-cache/
-scan-output/
-frontend/public/data/
+# Runtime market and scan data (root/runtime paths only; source folders named
+# `data` are application code and must remain tracked).
+/data/
+/reports/
+/reports_benchmark/
+/market-cache/
+/scan-output/
+/engines/next/data/
+/engines/next/frontend/public/data/
+/frontend/public/data/
 !frontend/public/data/.gitkeep
 
 # Editor and OS
@@ -34,4 +41,3 @@ frontend/public/data/
 Thumbs.db
 .idea/
 .vscode/
-

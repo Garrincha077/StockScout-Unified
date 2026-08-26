@@ -1,0 +1,47 @@
+/* Mobile header/nav hotfix.
+   Keep viewport-fixed bottom navigation independent from the sticky top bar.
+   Some mobile Chromium/WebView builds treat backdrop-filter on an ancestor as
+   a containing block for fixed descendants, which pulled .dv-top nav into the
+   header and made it overlap the STOCKSCOUT / LEGACY switch. */
+@media (max-width: 760px) {
+  .dv-top {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    filter: none !important;
+    transform: none !important;
+    perspective: none !important;
+    contain: none !important;
+  }
+
+  .dv-top nav {
+    position: fixed !important;
+    top: auto !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    margin: 0 !important;
+    transform: none !important;
+  }
+
+  /* Keep the layer switch centered in the compact top bar, above page content
+     but below the viewport-fixed bottom navigation stacking layer. */
+  .ss-layer-switch {
+    position: fixed !important;
+    top: calc(env(safe-area-inset-top) + 7px) !important;
+    bottom: auto !important;
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%) !important;
+    z-index: 115 !important;
+    max-width: 42vw !important;
+    white-space: nowrap !important;
+  }
+
+  .ss-layer-switch button {
+    min-width: 54px !important;
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+}

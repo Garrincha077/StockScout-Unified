@@ -1,0 +1,263 @@
+name: StockScout Unified EOD
+
+on:
+  schedule:
+    - cron: "30 21 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      scan_date:
+        description: "Completed NYSE session (YYYY-MM-DD); blank uses today"
+        required: false
+        type: string
+      notify:
+        description: "Send Telegram only after verified Pages activation"
+        required: false
+        type: boolean
+        default: false
+      force_full_refresh:
+        description: "Refresh Next fundamentals instead of using the warm cache"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: stockscout-unified-eod
+  cancel-in-progress: false
+
+jobs:
+  scan-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    permissions:
+      contents: read
+    outputs:
+      should_run: ${{ steps.guard.outputs.should_run }}
+      session_date: ${{ steps.guard.outputs.session_date }}
+      run_id: ${{ steps.identity.outputs.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            requirements-dev.lock
+            engines/next/requirements.txt
+
+      - name: Install pinned Python runtimes
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.lock -r requirements-dev.lock
+          python -m pip install -r engines/next/requirements.txt
+          python -m pip install -e .
+
+      - name: Select one completed NYSE session
+        id: guard
+        shell: bash
+        env:
+          REQUESTED_DATE: ${{ inputs.scan_date }}
+        run: |
+          args=(guard --active-manifest https://garrincha077.github.io/StockScout-Unified/data/manifest.json --github-output "$GITHUB_OUTPUT")
+          if [ -n "$REQUESTED_DATE" ]; then args+=(--requested-date "$REQUESTED_DATE"); fi
+          python -m stockscout_eod.cli "${args[@]}"
+
+      - name: Create immutable run identity
+        if: steps.guard.outputs.should_run == 'true'
+        id: identity
+        shell: bash
+        run: echo "run_id=${{ steps.guard.outputs.session_date }}-eod-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify pinned source contracts
+        if: steps.guard.outputs.should_run == 'true'
+        run: |
+          python scripts/verify_source_pins.py
+          python -m ruff check src tests scripts
+          python -m pytest -q
+          cd engines/next
+          python verify_legacy_baseline.py
+
+      - uses: actions/cache@v4
+        if: steps.guard.outputs.should_run == 'true'
+        with:
+          path: |
+            data/cache
+            engines/next/data/fundamentals_cache
+            engines/next/data/git_storage
+          key: unified-market-${{ runner.os }}-${{ steps.guard.outputs.session_date }}-${{ hashFiles('requirements.lock', 'engines/next/requirements.txt') }}
+          restore-keys: |
+            unified-market-${{ runner.os }}-
+
+      - name: Restore only compact previous history
+        if: steps.guard.outputs.should_run == 'true'
+        run: python scripts/restore_compact_history.py
+
+      - name: Run Bottom Fishing (split-only, notifications disabled)
+        if: steps.guard.outputs.should_run == 'true'
+        env:
+          STOCK_SCOUT_NO_NOTIFY: "1"
+        run: |
+          mkdir -p .staging
+          python -m stockscout_eod.cli scan --config config/eod.yaml --output .staging/bottom.json --session-date "${{ steps.guard.outputs.session_date }}" --run-id "${{ steps.identity.outputs.run_id }}" --no-notify
+          python -m stockscout_eod.cli health --input .staging/bottom.json
+          python -m stockscout_eod.cli charts --input .staging/bottom.json --config config/eod.yaml --output .staging/bottom-charts --storage-base-url "https://garrincha077.github.io/StockScout-Unified/data/modes/bottom-fishing/runs/${{ steps.identity.outputs.run_id }}/charts"
+          python -m stockscout_unified.cli publish-bottom --raw-scan .staging/bottom.json --public-dir frontend/public --previous-manifest frontend/public/data/modes/bottom-fishing/manifest.json --chart-manifest ".staging/bottom-charts/${{ steps.identity.outputs.run_id }}/manifest.json" --chart-staging-dir .staging/bottom-charts
+
+      - name: Run Next and exact Ryan Original capture (adjusted OHLCV)
+        if: steps.guard.outputs.should_run == 'true'
+        working-directory: engines/next
+        env:
+          FORCE_FULL_REFRESH: ${{ inputs.force_full_refresh || 'false' }}
+        run: |
+          mkdir -p data/daily_scans data/logs data/batch_results frontend/public/data
+          python run_fast_scan.py --conservative --git-storage
+          python validate_scan_session.py
+          python hydrate_rich_fundamentals.py
+          python export_frontend_data_fast.py
+          python enhance_frontend_dataset.py
+          python calibrate_frontend_setups.py
+          python compute_group_leadership.py
+          python enrich_original_engine.py
+          python complete_legacy_capture.py
+          python enrich_scan_layers.py
+          python apply_fundamental_evidence.py
+          python compute_opportunity_v2.py
+          python compute_daily_changes.py data/batch_results/previous_frontend.json frontend/public/data/latest.json
+          python finalize_opportunity_v2.py
+          python validate_canonical_dataset.py
+          python audit_pipeline_models.py
+          python audit_fundamental_evidence.py
+          python verify_legacy_baseline.py
+          python validate_frontend_charts.py frontend/public --strict --minimum-coverage 0.95
+
+      - name: Publish isolated Next and Ryan mode assets
+        if: steps.guard.outputs.should_run == 'true'
+        run: |
+          python -m stockscout_unified.cli publish-adjusted --mode next --canonical engines/next/frontend/public/data/latest.json --chart-dir engines/next/frontend/public/data/charts --public-dir frontend/public --run-id "${{ steps.identity.outputs.run_id }}" --session-date "${{ steps.guard.outputs.session_date }}"
+          python -m stockscout_unified.cli publish-adjusted --mode ryan-original --canonical engines/next/frontend/public/data/latest.json --chart-dir engines/next/frontend/public/data/charts --public-dir frontend/public --run-id "${{ steps.identity.outputs.run_id }}" --session-date "${{ steps.guard.outputs.session_date }}"
+          python -m stockscout_unified.cli activate --public-dir frontend/public --run-id "${{ steps.identity.outputs.run_id }}" --session-date "${{ steps.guard.outputs.session_date }}"
+          python -m stockscout_unified.cli verify --public-dir frontend/public
+          python -m stockscout_unified.cli notify --public-dir frontend/public --bottom-raw-scan .staging/bottom.json
+
+      - uses: actions/setup-node@v4
+        if: steps.guard.outputs.should_run == 'true'
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            services/mcp/package-lock.json
+
+      - uses: denoland/setup-deno@v2
+        if: steps.guard.outputs.should_run == 'true'
+        with:
+          deno-version: v2.2.7
+
+      - name: Test OIDC owner operations
+        if: steps.guard.outputs.should_run == 'true'
+        run: deno test supabase/functions/unified-operations/index_test.ts
+
+      - name: Test and build PWA and MCP
+        if: steps.guard.outputs.should_run == 'true'
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          npm ci --prefix frontend
+          npm test --prefix frontend
+          npm run build --prefix frontend
+          npm ci --prefix services/mcp
+          npm test --prefix services/mcp
+
+      - name: Upload private Telegram render input
+        if: steps.guard.outputs.should_run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unified-notify-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .staging/bottom.json
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload Pages artifact only after all three modes pass
+        if: steps.guard.outputs.should_run == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+          retention-days: 14
+
+      - name: Upload failure diagnostics without runtime market data
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unified-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .staging/*.json
+            engines/next/data/daily_scans/latest_optimized_scan.txt
+            engines/next/data/logs/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  deploy-pages:
+    needs: scan-build
+    if: needs.scan-build.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Atomically deploy the verified artifact
+        id: deploy
+        uses: actions/deploy-pages@v4
+
+  verify-notify:
+    needs: [scan-build, deploy-pages]
+    if: needs.scan-build.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install -r requirements.lock
+          python -m pip install -e .
+      - name: Verify the exact deployed run and all mode hashes
+        env:
+          EXPECTED_RUN: ${{ needs.scan-build.outputs.run_id }}
+        run: python scripts/verify_remote_activation.py --run-id "$EXPECTED_RUN"
+      - name: Download verified scan artifact for Telegram
+        if: ${{ github.event_name == 'schedule' || inputs.notify }}
+        uses: actions/download-artifact@v4
+        with:
+          name: github-pages
+          path: .pages
+      - name: Download private Bottom digest input
+        if: ${{ github.event_name == 'schedule' || inputs.notify }}
+        uses: actions/download-artifact@v4
+        with:
+          name: unified-notify-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .notify
+      - name: Extract verified Pages snapshot
+        if: ${{ github.event_name == 'schedule' || inputs.notify }}
+        run: tar -xf .pages/artifact.tar -C .pages
+      - name: Evaluate owner alerts for the exact deployed run
+        if: ${{ (github.event_name == 'schedule' || inputs.notify) && vars.UNIFIED_DELIVERY_ENDPOINT != '' }}
+        run: python -m stockscout_unified.cli evaluate-alerts --public-dir .pages --endpoint "${{ vars.UNIFIED_DELIVERY_ENDPOINT }}" --output .notify/alerts.json
+      - name: Deliver five resumable Telegram series
+        if: ${{ (github.event_name == 'schedule' || inputs.notify) && vars.UNIFIED_DELIVERY_ENDPOINT != '' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python -m stockscout_unified.cli notify --public-dir .pages --bottom-raw-scan .notify/bottom.json --alerts .notify/alerts.json --delivery-endpoint "${{ vars.UNIFIED_DELIVERY_ENDPOINT }}" --allow-notify
+      - name: Explain disabled notification infrastructure
+        if: ${{ (github.event_name == 'schedule' || inputs.notify) && vars.UNIFIED_DELIVERY_ENDPOINT == '' }}
+        run: echo "Telegram was not sent because UNIFIED_DELIVERY_ENDPOINT is not configured." >> "$GITHUB_STEP_SUMMARY"
