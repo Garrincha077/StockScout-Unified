@@ -17,10 +17,6 @@ on:
           - "2026-08-25"
         default: "2026-08-25"
 
-concurrency:
-  group: stockscout-unified-eod
-  cancel-in-progress: false
-
 jobs:
   build-existing:
     runs-on: ubuntu-latest
