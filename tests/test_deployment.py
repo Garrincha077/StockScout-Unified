@@ -44,3 +44,7 @@ def test_existing_snapshot_workflow_contains_no_scan_or_notification_delivery() 
     assert "publish-bottom" in workflow
     assert "publish-adjusted" in workflow
     assert "actions/deploy-pages@v4" in workflow
+    carrier = Path(".github/workflows/eod.yml").read_text(encoding="utf-8")
+    assert "reuse_existing:" in carrier
+    assert "uses: ./.github/workflows/publish-existing.yml" in carrier
+    assert "!inputs.reuse_existing" in carrier

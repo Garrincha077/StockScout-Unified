@@ -1,6 +1,12 @@
 name: Publish Existing Verified Scan
 
 on:
+  workflow_call:
+    inputs:
+      session_date:
+        description: "Verified existing session to publish"
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       session_date:

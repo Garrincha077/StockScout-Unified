@@ -19,13 +19,29 @@ on:
         required: false
         type: boolean
         default: false
+      reuse_existing:
+        description: "Publish the hash-pinned existing session without running scans"
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: stockscout-unified-eod
   cancel-in-progress: false
 
 jobs:
+  reuse-existing:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.reuse_existing }}
+    uses: ./.github/workflows/publish-existing.yml
+    with:
+      session_date: ${{ inputs.scan_date }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
   scan-build:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.reuse_existing }}
     runs-on: ubuntu-latest
     timeout-minutes: 330
     permissions:
