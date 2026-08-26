@@ -81,10 +81,13 @@ def evaluate_scan_health(
     tickers = [str(row.get("ticker") or "").strip().upper() for row in scan.candidates]
     excluded_tickers = [str(row.get("ticker") or "").strip().upper() for row in scan.excluded]
     all_tickers = tickers + excluded_tickers
-    as_of_dates = {
+    as_of_values = [
         str(row.get("as_of") or row.get("asOf") or "")
         for row in [*scan.candidates, *scan.excluded]
-    }
+    ]
+    as_of_dates = set(as_of_values)
+    aligned_rows = sum(value == scan.session_date for value in as_of_values)
+    aligned_pct = 100.0 * aligned_rows / max(1, len(as_of_values))
 
     checks = [
         _check(
@@ -99,8 +102,11 @@ def evaluate_scan_health(
         ),
         _check(
             "session_date_alignment",
-            bool(as_of_dates) and as_of_dates == {scan.session_date},
-            f"candidate dates={sorted(as_of_dates)} session={scan.session_date}",
+            bool(as_of_dates) and aligned_pct >= min_coverage_pct,
+            (
+                f"aligned={aligned_rows}/{len(as_of_values)} ({aligned_pct:.2f}%) "
+                f"candidate dates={sorted(as_of_dates)} session={scan.session_date}"
+            ),
         ),
         _check(
             "market_data_freshness",

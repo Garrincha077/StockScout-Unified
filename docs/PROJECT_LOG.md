@@ -26,3 +26,18 @@
 - Bound that validator to the orchestrator-selected session: replay is accepted only when SPY and the universe's coherent modal session exactly match the requested prior session.
 - Added a pre-Next Bottom checkpoint and enabled hidden-file inclusion for every `.staging` artifact so a downstream failure cannot silently discard the expensive scan result again.
 - No replacement scan or notification was started. Targeted validation passed: 9 Next session-guard tests, 3 Unified workflow/snapshot tests, source-pin checks, Ryan baseline checks, and Python lint.
+
+## 2026-08-26 — Scan-free workflow recovery
+
+- Added a separate GitHub Actions recovery workflow that can publish one
+  hash-pinned existing session without executing Bottom, Next, or Ryan scans.
+- Verified the completed 2026-08-25 Bottom cloud snapshot (2,096 candidates,
+  16 excluded) and exported 100% split-only chart coverage from the existing
+  local DuckDB in read-only mode. Seven rows retain their older source date;
+  freshness is reported explicitly as 99.67% rather than silently rewritten.
+- Pinned the matching public Next/Ryan snapshot to its real source commit
+  `a878b671e93617f3331604a8ea4eea592fddc6e4`; the previously recorded full
+  hash did not exist, although its critical-file hashes were correct.
+- The recovery workflow validates release, raw-scan, chart-manifest, session,
+  price-basis, chart-coverage, and final Pages manifest hashes. It renders the
+  Telegram series as a dry run but contains no delivery path.

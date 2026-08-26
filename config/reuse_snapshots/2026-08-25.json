@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "stockscout-unified/reuse-source-v1",
+  "sessionDate": "2026-08-25",
+  "runId": "2026-08-25-reuse-1",
+  "releaseTag": "reuse-data-2026-08-25",
+  "assetName": "bottom-reuse-2026-08-25.tar.gz",
+  "assetSha256": "4cdddd2445ce17749c1ca4189ddaa4c5305e94474c2c296dfe98a248308ea375",
+  "rawScanSha256": "63a75c57ea1ad455eae929772add2a345f7a630adf053d9314716b2a475e56ff",
+  "chartManifestSha256": "2dd9947e3711cc7fb6151a681d5b16b91d08070954edc7ec09c830fabd6e0ddc",
+  "sourceCloudCommit": "71dbb840d2cccd2140bc2fd446177b12f7e80375",
+  "sourceCloudPayloadHash": "26b02fcef4eed5929d42d5923a6c69dde09f124944b77b945b2883f7eb29a221",
+  "nextSourceCommit": "a878b671e93617f3331604a8ea4eea592fddc6e4"
+}

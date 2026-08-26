@@ -6,7 +6,7 @@
   },
   "next": {
     "repository": "StockScreener-next",
-    "commit": "a878b671e936cbb6e2f37d2d170740300885aa8b",
+    "commit": "a878b671e93617f3331604a8ea4eea592fddc6e4",
     "priceBasis": "split_div",
     "criticalFiles": {
       "engines/next/run_fast_scan.py": "7f65caf0d80399419c8ad5098db784b9c538956b5c9f6385c12d5440f341050b",

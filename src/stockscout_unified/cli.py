@@ -15,6 +15,7 @@ from stockscout_eod.runner import load_raw_scan
 from .contracts import UnifiedManifestV1
 from .notifications import build_series, deliver_series, evaluate_owner_alerts
 from .publisher import activate_unified, publish_adjusted_mode
+from .reuse import prepare_bottom_reuse
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -29,6 +30,16 @@ def _parser() -> argparse.ArgumentParser:
     bottom.add_argument("--chart-staging-dir", required=True)
     bottom.add_argument("--allow-fixture", action="store_true")
     bottom.add_argument("--min-universe", type=int, default=1000)
+
+    reuse = commands.add_parser(
+        "prepare-bottom-reuse",
+        help="Export a completed Bottom cloud snapshot and local split-only charts without scanning",
+    )
+    reuse.add_argument("--cloud-snapshot", required=True)
+    reuse.add_argument("--market-store", required=True)
+    reuse.add_argument("--output-dir", required=True)
+    reuse.add_argument("--run-id", required=True)
+    reuse.add_argument("--storage-base-url", required=True)
 
     adjusted = commands.add_parser("publish-adjusted", help="Publish isolated Next or Ryan assets")
     adjusted.add_argument("--mode", choices=("next", "ryan-original"), required=True)
@@ -103,6 +114,25 @@ def verify(public_dir: str | Path) -> UnifiedManifestV1:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.command == "prepare-bottom-reuse":
+        raw_path, charts = prepare_bottom_reuse(
+            cloud_snapshot=args.cloud_snapshot,
+            market_store=args.market_store,
+            output_dir=args.output_dir,
+            run_id=args.run_id,
+            storage_base_url=args.storage_base_url,
+        )
+        print(
+            json.dumps(
+                {
+                    "rawScan": str(raw_path),
+                    "chartCoveragePct": charts.coverage_pct,
+                    "chartsAvailable": charts.available,
+                },
+                sort_keys=True,
+            )
+        )
+        return 0
     if args.command == "publish-bottom":
         scan = load_raw_scan(args.raw_scan)
         chart_index = json.loads(Path(args.chart_manifest).read_text(encoding="utf-8"))
