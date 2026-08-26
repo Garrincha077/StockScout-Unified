@@ -16,7 +16,9 @@ MANIFEST = ROOT / "config" / "legacy_baseline.json"
 
 
 def git_blob_sha(path: Path) -> str:
-    data = path.read_bytes()
+    # Protected sources are Git text blobs. Normalize checkout-specific CRLF so
+    # the same upstream blob identity is verified on Windows and Linux.
+    data = path.read_bytes().replace(b"\r\n", b"\n")
     header = f"blob {len(data)}\0".encode("utf-8")
     return hashlib.sha1(header + data).hexdigest()
 

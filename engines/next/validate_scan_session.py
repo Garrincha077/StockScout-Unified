@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import pickle
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -22,6 +22,7 @@ MIN_COHERENT_COVERAGE = 0.90
 MAX_STALE_CALENDAR_DAYS = 4
 EARLIEST_PUBLISH_MINUTES_ET = 16 * 60 + 30
 FULL_VALIDATION_EVENTS = {"push", "pull_request", "workflow_dispatch"}
+EXPECTED_SESSION_ENV = "STOCKSCOUT_EXPECTED_SESSION"
 
 
 def last_date(frame: pd.DataFrame | None):
@@ -55,24 +56,43 @@ def manual_backfill_allowed() -> bool:
     return event in FULL_VALIDATION_EVENTS and is_full_validation
 
 
-def main() -> None:
-    now_utc = datetime.now(timezone.utc)
+def expected_session_from_env() -> date | None:
+    """Return the orchestrator-selected session, failing closed if malformed."""
+    value = os.getenv(EXPECTED_SESSION_ENV, "").strip()
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise SystemExit(f"Invalid {EXPECTED_SESSION_ENV}: {value!r}") from exc
+
+
+def validate_session(*, now_utc: datetime | None = None, price_cache: Path = PRICE_CACHE) -> None:
+    now_utc = now_utc or datetime.now(timezone.utc)
     now_et = now_utc.astimezone(ZoneInfo("America/New_York"))
     minutes_et = now_et.hour * 60 + now_et.minute
-    backfill = manual_backfill_allowed()
+    expected_session = expected_session_from_env()
+    explicit_prior_session = (
+        expected_session is not None and expected_session < now_et.date()
+    )
+    backfill = manual_backfill_allowed() or explicit_prior_session
     if minutes_et < EARLIEST_PUBLISH_MINUTES_ET and not backfill:
         raise SystemExit(
             f"Refusing publish before completed regular US session: now {now_et.isoformat()}, require >=16:30 ET"
         )
 
-    if not PRICE_CACHE.exists():
-        raise SystemExit(f"Missing canonical price cache: {PRICE_CACHE}")
-    with PRICE_CACHE.open("rb") as fh:
+    if not price_cache.exists():
+        raise SystemExit(f"Missing canonical price cache: {price_cache}")
+    with price_cache.open("rb") as fh:
         price_history: dict[str, pd.DataFrame] = pickle.load(fh)
 
     spy_date = last_date(price_history.get("SPY"))
     if spy_date is None:
         raise SystemExit("SPY has no valid last session date")
+    if expected_session is not None and spy_date != expected_session:
+        raise SystemExit(
+            f"SPY session {spy_date} does not match orchestrator session {expected_session}"
+        )
 
     age = (now_et.date() - spy_date).days
     if age < 0 or age > MAX_STALE_CALENDAR_DAYS:
@@ -95,11 +115,15 @@ def main() -> None:
             f"Price cache session coherence too low: {mode_count}/{len(dates)} ({coherent:.1%}) on {mode_date}"
         )
 
-    mode = "manual prior-session backfill" if backfill and minutes_et < EARLIEST_PUBLISH_MINUTES_ET else "normal post-market"
+    mode = "prior-session replay" if backfill and minutes_et < EARLIEST_PUBLISH_MINUTES_ET else "normal post-market"
     print(
         f"US session invariant OK ({mode}): SPY={spy_date}; now={now_et.strftime('%Y-%m-%d %H:%M %Z')}; "
         f"universe coherence={mode_count}/{len(dates)} ({coherent:.1%})"
     )
+
+
+def main() -> None:
+    validate_session()
 
 
 if __name__ == "__main__":

@@ -104,11 +104,24 @@ jobs:
           python -m stockscout_eod.cli charts --input .staging/bottom.json --config config/eod.yaml --output .staging/bottom-charts --storage-base-url "https://garrincha077.github.io/StockScout-Unified/data/modes/bottom-fishing/runs/${{ steps.identity.outputs.run_id }}/charts"
           python -m stockscout_unified.cli publish-bottom --raw-scan .staging/bottom.json --public-dir frontend/public --previous-manifest frontend/public/data/modes/bottom-fishing/manifest.json --chart-manifest ".staging/bottom-charts/${{ steps.identity.outputs.run_id }}/manifest.json" --chart-staging-dir .staging/bottom-charts
 
+      - name: Preserve resumable Bottom checkpoint before Next
+        if: steps.guard.outputs.should_run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unified-bottom-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .staging/bottom.json
+            .staging/bottom-charts/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 2
+
       - name: Run Next and exact Ryan Original capture (adjusted OHLCV)
         if: steps.guard.outputs.should_run == 'true'
         working-directory: engines/next
         env:
           FORCE_FULL_REFRESH: ${{ inputs.force_full_refresh || 'false' }}
+          STOCKSCOUT_EXPECTED_SESSION: ${{ steps.guard.outputs.session_date }}
         run: |
           mkdir -p data/daily_scans data/logs data/batch_results frontend/public/data
           python run_fast_scan.py --conservative --git-storage
@@ -176,6 +189,7 @@ jobs:
         with:
           name: unified-notify-${{ github.run_id }}-${{ github.run_attempt }}
           path: .staging/bottom.json
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 1
 
@@ -196,6 +210,7 @@ jobs:
             engines/next/data/daily_scans/latest_optimized_scan.txt
             engines/next/data/logs/
           if-no-files-found: ignore
+          include-hidden-files: true
           retention-days: 7
 
   deploy-pages:

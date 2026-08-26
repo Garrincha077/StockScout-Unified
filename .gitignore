@@ -17,6 +17,7 @@ build/
 
 # Node
 node_modules/
+/.staging/
 frontend/dist/
 services/mcp/.vercel/
 frontend/test-results/
