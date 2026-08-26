@@ -17,4 +17,5 @@
 - Replaced the old scan-backed MCP with a stateless GitHub Pages MCP exposing five read-only tools.
 - Added five resumable Telegram series and an allowlisted GitHub OIDC operations function for delivery state and alert evaluation.
 - Added the weekday exchange-guarded scan/build/deploy workflow, mobile/desktop E2E coverage, security contract tests, and source parity tests.
-- Verification: 136 Python tests passed (2 intentional skips), 52 frontend unit tests passed, 4 Playwright mobile/desktop tests passed, 3 MCP contract tests passed, Python lint and production builds passed.
+- Verification: 136 Python tests passed (2 intentional skips), including 57 direct private-source parity tests (1 research-only skip); 52 frontend unit tests, 4 Playwright mobile/desktop tests, 3 MCP contract tests, and 3 Deno alert tests passed. Python lint and production builds passed.
+- Deployed the stateless read-only MCP to `stockscout-unified-mcp.vercel.app`; its production health and MCP initialization contracts returned HTTP 200.

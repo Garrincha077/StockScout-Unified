@@ -35,5 +35,8 @@ Test and manual scans must keep notifications disabled. Generated market data, r
 
 Deployment and owner-state setup are documented in [docs/SETUP.md](docs/SETUP.md). Provenance is pinned in [config/source_pins.json](config/source_pins.json).
 
+The deployed read-only MCP endpoint is
+[`https://stockscout-unified-mcp.vercel.app/mcp`](https://stockscout-unified-mcp.vercel.app/mcp).
+
 Development happens on `codex/unified-app`. Existing StockScout and StockScreener
 repositories are read-only sources and are never modified by this repository.

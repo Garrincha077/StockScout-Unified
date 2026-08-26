@@ -33,7 +33,10 @@ The browser receives only the publishable key. Every owner table uses `auth.uid(
 
 ## ChatGPT MCP
 
-Deploy `services/mcp` as a separate Vercel project with root directory `services/mcp` and Node.js 22. `SCAN_BASE_URL` defaults to the public Pages `/data/` root. The MCP is stateless and read-only; it has no Supabase or broker credential.
+The stateless MCP is deployed as the separate Vercel project
+`stockscout-unified-mcp`; its stable endpoint is
+`https://stockscout-unified-mcp.vercel.app/mcp`. `SCAN_BASE_URL` defaults to
+the public Pages `/data/` root. The MCP has no Supabase or broker credential.
 
 Connect the stable `/mcp` endpoint in ChatGPT developer mode. The tools are `list_modes`, `describe_scan_fields`, `screen_scan`, `search`, and `fetch`. Bottom Fishing is the default and cross-mode ranking is intentionally unavailable.
 
