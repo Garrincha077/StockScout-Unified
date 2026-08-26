@@ -9,5 +9,7 @@
   "chartManifestSha256": "2dd9947e3711cc7fb6151a681d5b16b91d08070954edc7ec09c830fabd6e0ddc",
   "sourceCloudCommit": "71dbb840d2cccd2140bc2fd446177b12f7e80375",
   "sourceCloudPayloadHash": "26b02fcef4eed5929d42d5923a6c69dde09f124944b77b945b2883f7eb29a221",
-  "nextSourceCommit": "a878b671e93617f3331604a8ea4eea592fddc6e4"
+  "nextSourceCommit": "a878b671e93617f3331604a8ea4eea592fddc6e4",
+  "nextSnapshotCommit": "1f70ebeca09663d360a3ea324645ee26726cdc06",
+  "nextCanonicalSha256": "0f5411ec28277f391d6a349ce1a9ea964adf6db65158eb519271a99a26061e92"
 }

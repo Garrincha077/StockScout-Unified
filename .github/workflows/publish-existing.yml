@@ -50,14 +50,16 @@ jobs:
           print(f"asset_sha256={source['assetSha256']}")
           print(f"raw_sha256={source['rawScanSha256']}")
           print(f"charts_sha256={source['chartManifestSha256']}")
-          print(f"next_commit={source['nextSourceCommit']}")
+          print(f"next_source_commit={source['nextSourceCommit']}")
+          print(f"next_snapshot_commit={source['nextSnapshotCommit']}")
+          print(f"next_canonical_sha256={source['nextCanonicalSha256']}")
           PY
 
       - name: Check out exact existing Next and Ryan result
         uses: actions/checkout@v4
         with:
           repository: Garrincha077/StockScreener-next
-          ref: ${{ steps.identity.outputs.next_commit }}
+          ref: ${{ steps.identity.outputs.next_snapshot_commit }}
           path: .sources/next
           fetch-depth: 1
           sparse-checkout-cone-mode: false
@@ -103,9 +105,12 @@ jobs:
           RUN_ID: ${{ steps.identity.outputs.run_id }}
           RAW_SHA256: ${{ steps.identity.outputs.raw_sha256 }}
           CHARTS_SHA256: ${{ steps.identity.outputs.charts_sha256 }}
+          NEXT_SOURCE_COMMIT: ${{ steps.identity.outputs.next_source_commit }}
+          NEXT_CANONICAL_SHA256: ${{ steps.identity.outputs.next_canonical_sha256 }}
         run: |
           echo "$RAW_SHA256  .staging/reuse/bottom.json" | sha256sum --check --strict
           echo "$CHARTS_SHA256  .staging/reuse/bottom-charts/$RUN_ID/manifest.json" | sha256sum --check --strict
+          echo "$NEXT_CANONICAL_SHA256  .sources/next/frontend/public/data/latest.json" | sha256sum --check --strict
           python -m stockscout_eod.cli health --input .staging/reuse/bottom.json
           python - <<'PY'
           import json
@@ -116,6 +121,9 @@ jobs:
           charts = json.loads(
               Path(f".staging/reuse/bottom-charts/{os.environ['RUN_ID']}/manifest.json").read_text()
           )
+          next_manifest = json.loads(
+              Path(".sources/next/frontend/public/data/manifest.json").read_text()
+          )
           for payload in (raw, charts):
               if payload["runId"] != os.environ["RUN_ID"]:
                   raise SystemExit("reused run identity mismatch")
@@ -125,6 +133,16 @@ jobs:
                   raise SystemExit("Bottom reuse price basis is not split_only")
           if charts["coveragePct"] != 100.0:
               raise SystemExit("Bottom reuse charts are incomplete")
+          if next_manifest["marketSession"] != {
+              "date": os.environ["SESSION_DATE"],
+              "status": "closed",
+              "timezone": "America/New_York",
+          }:
+              raise SystemExit("Next snapshot is not the requested closed session")
+          if next_manifest["provenance"]["source"]["sourceCommit"] != os.environ["NEXT_SOURCE_COMMIT"]:
+              raise SystemExit("Next engine source commit mismatch")
+          if next_manifest["provenance"]["source"]["sha256"] != os.environ["NEXT_CANONICAL_SHA256"]:
+              raise SystemExit("Next canonical manifest hash mismatch")
           PY
 
       - name: Publish all three isolated modes without scanning

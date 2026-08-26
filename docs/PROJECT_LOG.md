@@ -41,3 +41,7 @@
 - The recovery workflow validates release, raw-scan, chart-manifest, session,
   price-basis, chart-coverage, and final Pages manifest hashes. It renders the
   Telegram series as a dry run but contains no delivery path.
+- Next provenance now pins the engine source commit separately from the data
+  snapshot commit. The former identifies the code that calculated the scan;
+  the latter identifies the Git object containing the immutable 2026-08-25
+  canonical JSON and chart shards.
