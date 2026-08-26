@@ -1,11 +1,6 @@
 name: StockScout Unified EOD
 
 on:
-  # One branch push is used to bootstrap the pre-merge verification run because
-  # GitHub registers workflow_dispatch only after a workflow reaches the default branch.
-  push:
-    branches:
-      - codex/unified-app
   schedule:
     - cron: "30 21 * * 1-5"
   workflow_dispatch:
