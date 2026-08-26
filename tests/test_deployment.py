@@ -31,7 +31,6 @@ def test_unified_workflow_deploys_only_after_three_mode_activation() -> None:
     assert "Upload Pages artifact only after all three modes pass" in workflow
     assert "path: frontend/dist" in workflow
     assert "actions/deploy-pages@v4" in workflow
-    assert "group: stockscout-unified-eod" not in workflow
     assert "Verify the exact deployed run and all mode hashes" in workflow
     assert workflow.index("stockscout_unified.cli activate") < workflow.index("actions/upload-pages-artifact")
 
@@ -45,6 +44,7 @@ def test_existing_snapshot_workflow_contains_no_scan_or_notification_delivery() 
     assert "publish-bottom" in workflow
     assert "publish-adjusted" in workflow
     assert "actions/deploy-pages@v4" in workflow
+    assert "group: stockscout-unified-eod" not in workflow
     carrier = Path(".github/workflows/eod.yml").read_text(encoding="utf-8")
     assert "reuse_existing:" in carrier
     assert "uses: ./.github/workflows/publish-existing.yml" in carrier
