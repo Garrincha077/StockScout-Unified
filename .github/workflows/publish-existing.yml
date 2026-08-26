@@ -145,6 +145,25 @@ jobs:
               raise SystemExit("Next canonical manifest hash mismatch")
           PY
 
+      - name: Download and verify the exact public Next chart snapshot
+        shell: bash
+        env:
+          SESSION_DATE: ${{ inputs.session_date }}
+        run: |
+          chart_root="https://garrincha077.github.io/StockScreener-next/data/charts"
+          chart_dir=".sources/next/frontend/public/data/charts"
+          mkdir -p "$chart_dir"
+          export chart_root chart_dir SESSION_DATE
+          seq -w 0 127 | xargs -I{} -P 8 sh -c \
+            'curl --fail --silent --show-error --retry 3 --retry-all-errors \
+              -H "Cache-Control: no-cache" \
+              "$chart_root/{}.json?session=$SESSION_DATE" \
+              --output "$chart_dir/{}.json"'
+          python scripts/verify_next_chart_snapshot.py \
+            --canonical .sources/next/frontend/public/data/latest.json \
+            --manifest .sources/next/frontend/public/data/manifest.json \
+            --chart-dir "$chart_dir"
+
       - name: Publish all three isolated modes without scanning
         shell: bash
         env:

@@ -43,6 +43,8 @@ def test_existing_snapshot_workflow_contains_no_scan_or_notification_delivery() 
     assert "sha256sum --check --strict" in workflow
     assert "next_snapshot_commit" in workflow
     assert "Next engine source commit mismatch" in workflow
+    assert "verify_next_chart_snapshot.py" in workflow
+    assert "StockScreener-next/data/charts" in workflow
     assert "publish-bottom" in workflow
     assert "publish-adjusted" in workflow
     assert "actions/deploy-pages@v4" in workflow

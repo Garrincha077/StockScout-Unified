@@ -45,3 +45,7 @@
   snapshot commit. The former identifies the code that calculated the scan;
   the latter identifies the Git object containing the immutable 2026-08-25
   canonical JSON and chart shards.
+- Because Next keeps its public chart shards in its Pages artifact rather than
+  Git, recovery downloads all 128 shards from that exact public snapshot and
+  verifies the manifest aggregate hash, byte count, deterministic ticker-to-
+  shard mapping, non-empty series, and 100% universe coverage before publish.
