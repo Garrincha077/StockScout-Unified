@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from stockscout_eod.artifacts import build_public_snapshot
-from stockscout_eod.contracts import ScanManifestV1, wire_dump
+from stockscout_eod.contracts import ChartManifestV1, ScanManifestV1, wire_dump
 from stockscout_eod.jsonio import sha256_bytes
 from stockscout_eod.runner import load_raw_scan
 
@@ -104,6 +104,30 @@ def verify(public_dir: str | Path) -> UnifiedManifestV1:
             raise ValueError(f"{mode} scan identity does not match active unified pointer")
         for name, descriptor in manifest.assets.items():
             target = path.parent / descriptor.path
+            # Bottom Fishing publishes its compact gzip chart shards beside a
+            # chart manifest. Next and Ryan place their shards directly at the
+            # descriptor path. Both layouts are part of the public contract.
+            if name == "charts" and target.is_file():
+                target_bytes = target.read_bytes()
+                if len(target_bytes) != descriptor.bytes or sha256_bytes(target_bytes) != descriptor.sha256:
+                    raise ValueError(f"{mode} charts manifest hash or byte count mismatch")
+                chart_index = ChartManifestV1.model_validate_json(target_bytes)
+                if (
+                    chart_index.run_id != manifest.run_id
+                    or chart_index.session_date != manifest.session_date
+                    or chart_index.price_mode != manifest.price_mode
+                    or chart_index.available != descriptor.count
+                    or chart_index.coverage_pct != descriptor.coverage_pct
+                ):
+                    raise ValueError(f"{mode} charts manifest does not match its mode manifest")
+                for shard in chart_index.shards:
+                    shard_path = target.parent / "shards" / f"{shard.name}.json.gz"
+                    if not shard_path.is_file():
+                        raise FileNotFoundError(f"{mode} chart shard is missing: {shard.name}")
+                    shard_bytes = shard_path.read_bytes()
+                    if len(shard_bytes) != shard.bytes or sha256_bytes(shard_bytes) != shard.sha256:
+                        raise ValueError(f"{mode} chart shard hash or byte count mismatch: {shard.name}")
+                continue
             if name in {"details", "charts"}:
                 if not target.is_dir():
                     raise FileNotFoundError(f"{mode} {name} directory is missing")

@@ -49,3 +49,11 @@
   Git, recovery downloads all 128 shards from that exact public snapshot and
   verifies the manifest aggregate hash, byte count, deterministic ticker-to-
   shard mapping, non-empty series, and 100% universe coverage before publish.
+
+## 2026-08-26 — Recovery publication verification
+
+- Fixed the recovery-only publication failure: unified verification now accepts
+  Bottom Fishing's manifest-backed gzip chart shards while retaining the
+  directory-backed chart verification used by Next and Ryan Original.
+- Added a regression fixture that activates all three isolated modes with the
+  production Bottom chart layout and verifies the resulting public pointer.
