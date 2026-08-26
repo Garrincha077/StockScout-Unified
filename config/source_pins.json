@@ -1,0 +1,26 @@
+{
+  "bottom-fishing": {
+    "repository": "private StockScout",
+    "commit": "00a2d65a62256e5bc12c4d8e1118399a96ef8c57",
+    "priceBasis": "split_only"
+  },
+  "next": {
+    "repository": "StockScreener-next",
+    "commit": "a878b671e93617f3331604a8ea4eea592fddc6e4",
+    "priceBasis": "split_div",
+    "criticalFiles": {
+      "engines/next/run_fast_scan.py": "7f65caf0d80399419c8ad5098db784b9c538956b5c9f6385c12d5440f341050b",
+      "engines/next/enrich_original_engine.py": "6d24b172be073e8e85bb03e6fee81e2c1c864ca4fadb525f38a01d73a439a488",
+      "engines/next/complete_legacy_capture.py": "217ec0535bbdc8504580dc82fd86ed5247a175b125063d41a8fa55115bf7a780",
+      "engines/next/compute_opportunity_v2.py": "6325be1da5d9b052a3a9477c3b26801eb136eccc033565461c476605c30fe4d4",
+      "engines/next/finalize_opportunity_v2.py": "1769c50c9d20debff76a99eeece32f055d1d0f091e4ef7259bc0fb03f6b4613f",
+      "engines/next/config/legacy_baseline.json": "97cf95a6faad83051eeede0114f04f6d8c4dfa38eee3027e3868fca1b10261aa",
+      "engines/next/requirements.txt": "da56d2c8cb5498f9f4546707658532c0b1ce7590e034f842000a3dc9a2a181a0"
+    }
+  },
+  "ryan-original": {
+    "repository": "RyanJHamby/stock-screener",
+    "commit": "2fce788b7c95e595bdbb012bd35d3a92fcc49e5a",
+    "priceBasis": "split_div"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/data/charts/:path*",
+      "destination": "https://garrincha077.github.io/stock-screener2/data/charts/:path*"
+    }
+  ]
+}

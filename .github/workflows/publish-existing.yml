@@ -1,0 +1,264 @@
+name: Publish Existing Verified Scan
+
+on:
+  workflow_call:
+    inputs:
+      session_date:
+        description: "Verified existing session to publish"
+        required: true
+        type: string
+      notify:
+        description: "Render the private Telegram dry run after publication"
+        required: false
+        default: false
+        type: boolean
+  workflow_dispatch:
+    inputs:
+      session_date:
+        description: "Verified existing session to publish"
+        required: true
+        type: choice
+        options:
+          - "2026-08-25"
+        default: "2026-08-25"
+      notify:
+        description: "Render the private Telegram dry run after publication"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build-existing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    outputs:
+      run_id: ${{ steps.identity.outputs.run_id }}
+    steps:
+      - name: Check out Unified application
+        uses: actions/checkout@v4
+
+      - name: Read immutable reuse identity
+        id: identity
+        shell: bash
+        env:
+          SESSION_DATE: ${{ inputs.session_date }}
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+          from pathlib import Path
+
+          session = os.environ["SESSION_DATE"]
+          source = json.loads(Path(f"config/reuse_snapshots/{session}.json").read_text())
+          if source["sessionDate"] != session:
+              raise SystemExit("reuse session identity mismatch")
+          print(f"run_id={source['runId']}")
+          print(f"release_tag={source['releaseTag']}")
+          print(f"asset_name={source['assetName']}")
+          print(f"asset_sha256={source['assetSha256']}")
+          print(f"raw_sha256={source['rawScanSha256']}")
+          print(f"charts_sha256={source['chartManifestSha256']}")
+          print(f"next_source_commit={source['nextSourceCommit']}")
+          print(f"next_snapshot_commit={source['nextSnapshotCommit']}")
+          print(f"next_canonical_sha256={source['nextCanonicalSha256']}")
+          PY
+
+      - name: Check out exact existing Next and Ryan result
+        uses: actions/checkout@v4
+        with:
+          repository: Garrincha077/StockScreener-next
+          ref: ${{ steps.identity.outputs.next_snapshot_commit }}
+          path: .sources/next
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            frontend/public/data/latest.json
+            frontend/public/data/manifest.json
+            frontend/public/data/charts
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            requirements-dev.lock
+
+      - name: Install and verify application code
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.lock -r requirements-dev.lock
+          python -m pip install -e .
+          python scripts/verify_source_pins.py
+          python -m ruff check src tests scripts
+          python -m pytest -q
+
+      - name: Download the hash-pinned Bottom checkpoint
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.identity.outputs.release_tag }}
+          ASSET_NAME: ${{ steps.identity.outputs.asset_name }}
+          ASSET_SHA256: ${{ steps.identity.outputs.asset_sha256 }}
+        run: |
+          mkdir -p .staging/reuse
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$ASSET_NAME" --dir .staging/reuse
+          echo "$ASSET_SHA256  .staging/reuse/$ASSET_NAME" | sha256sum --check --strict
+          tar -xzf ".staging/reuse/$ASSET_NAME" -C .staging/reuse
+
+      - name: Verify reused scan and chart identities
+        shell: bash
+        env:
+          SESSION_DATE: ${{ inputs.session_date }}
+          RUN_ID: ${{ steps.identity.outputs.run_id }}
+          RAW_SHA256: ${{ steps.identity.outputs.raw_sha256 }}
+          CHARTS_SHA256: ${{ steps.identity.outputs.charts_sha256 }}
+          NEXT_SOURCE_COMMIT: ${{ steps.identity.outputs.next_source_commit }}
+          NEXT_CANONICAL_SHA256: ${{ steps.identity.outputs.next_canonical_sha256 }}
+        run: |
+          echo "$RAW_SHA256  .staging/reuse/bottom.json" | sha256sum --check --strict
+          echo "$CHARTS_SHA256  .staging/reuse/bottom-charts/$RUN_ID/manifest.json" | sha256sum --check --strict
+          echo "$NEXT_CANONICAL_SHA256  .sources/next/frontend/public/data/latest.json" | sha256sum --check --strict
+          python -m stockscout_eod.cli health --input .staging/reuse/bottom.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          raw = json.loads(Path(".staging/reuse/bottom.json").read_text())
+          charts = json.loads(
+              Path(f".staging/reuse/bottom-charts/{os.environ['RUN_ID']}/manifest.json").read_text()
+          )
+          next_manifest = json.loads(
+              Path(".sources/next/frontend/public/data/manifest.json").read_text()
+          )
+          for payload in (raw, charts):
+              if payload["runId"] != os.environ["RUN_ID"]:
+                  raise SystemExit("reused run identity mismatch")
+              if payload["sessionDate"] != os.environ["SESSION_DATE"]:
+                  raise SystemExit("reused session identity mismatch")
+              if payload["priceMode"] != "split_only":
+                  raise SystemExit("Bottom reuse price basis is not split_only")
+          if charts["coveragePct"] != 100.0:
+              raise SystemExit("Bottom reuse charts are incomplete")
+          if next_manifest["marketSession"] != {
+              "date": os.environ["SESSION_DATE"],
+              "status": "closed",
+              "timezone": "America/New_York",
+          }:
+              raise SystemExit("Next snapshot is not the requested closed session")
+          if next_manifest["provenance"]["source"]["sourceCommit"] != os.environ["NEXT_SOURCE_COMMIT"]:
+              raise SystemExit("Next engine source commit mismatch")
+          if next_manifest["provenance"]["source"]["sha256"] != os.environ["NEXT_CANONICAL_SHA256"]:
+              raise SystemExit("Next canonical manifest hash mismatch")
+          PY
+
+      - name: Download and verify the exact public Next chart snapshot
+        shell: bash
+        env:
+          SESSION_DATE: ${{ inputs.session_date }}
+        run: |
+          chart_root="https://garrincha077.github.io/StockScreener-next/data/charts"
+          chart_dir=".sources/next/frontend/public/data/charts"
+          mkdir -p "$chart_dir"
+          export chart_root chart_dir SESSION_DATE
+          seq -w 0 127 | xargs -I{} -P 8 sh -c \
+            'curl --fail --silent --show-error --retry 3 --retry-all-errors \
+              -H "Cache-Control: no-cache" \
+              "$chart_root/{}.json?session=$SESSION_DATE" \
+              --output "$chart_dir/{}.json"'
+          python scripts/verify_next_chart_snapshot.py \
+            --canonical .sources/next/frontend/public/data/latest.json \
+            --manifest .sources/next/frontend/public/data/manifest.json \
+            --chart-dir "$chart_dir"
+
+      - name: Publish all three isolated modes without scanning
+        shell: bash
+        env:
+          SESSION_DATE: ${{ inputs.session_date }}
+          RUN_ID: ${{ steps.identity.outputs.run_id }}
+        run: |
+          python -m stockscout_unified.cli publish-bottom \
+            --raw-scan .staging/reuse/bottom.json \
+            --public-dir frontend/public \
+            --chart-manifest ".staging/reuse/bottom-charts/$RUN_ID/manifest.json" \
+            --chart-staging-dir .staging/reuse/bottom-charts
+          python -m stockscout_unified.cli publish-adjusted \
+            --mode next \
+            --canonical .sources/next/frontend/public/data/latest.json \
+            --chart-dir .sources/next/frontend/public/data/charts \
+            --public-dir frontend/public \
+            --run-id "$RUN_ID" \
+            --session-date "$SESSION_DATE"
+          python -m stockscout_unified.cli publish-adjusted \
+            --mode ryan-original \
+            --canonical .sources/next/frontend/public/data/latest.json \
+            --chart-dir .sources/next/frontend/public/data/charts \
+            --public-dir frontend/public \
+            --run-id "$RUN_ID" \
+            --session-date "$SESSION_DATE"
+          python -m stockscout_unified.cli activate \
+            --public-dir frontend/public \
+            --run-id "$RUN_ID" \
+            --session-date "$SESSION_DATE"
+          python -m stockscout_unified.cli verify --public-dir frontend/public
+
+      - name: Render Telegram dry run only when requested
+        if: inputs.notify
+        run: |
+          python -m stockscout_unified.cli notify \
+            --public-dir frontend/public \
+            --bottom-raw-scan .staging/reuse/bottom.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            services/mcp/package-lock.json
+
+      - name: Test and build PWA and MCP
+        run: |
+          npm ci --prefix frontend
+          npm test --prefix frontend
+          npm run build --prefix frontend
+          npm ci --prefix services/mcp
+          npm test --prefix services/mcp
+
+      - name: Upload verified Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+          retention-days: 14
+
+  deploy-pages:
+    needs: build-existing
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Deploy the verified existing snapshot
+        id: deploy
+        uses: actions/deploy-pages@v4
+
+  verify-pages:
+    needs: [build-existing, deploy-pages]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify exact remote run and all mode hashes
+        env:
+          EXPECTED_RUN: ${{ needs.build-existing.outputs.run_id }}
+        run: python scripts/verify_remote_activation.py --run-id "$EXPECTED_RUN"

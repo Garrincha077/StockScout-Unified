@@ -1,0 +1,9 @@
+StockScout Unified combines independently developed StockScout components with
+selected code and workflow patterns derived from Ryan Hamby's stock-screener project.
+
+Portions derived from RyanJHamby/stock-screener:
+Copyright (c) 2024 Ryan Hamby
+Licensed under the MIT License.
+
+Ryan Original is preserved as an isolated scanner mode. Its results never
+alter Bottom Fishing or Next scoring and are not blended into another ranking.

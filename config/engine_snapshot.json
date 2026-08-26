@@ -1,0 +1,26 @@
+{
+  "source": "Garrincha077/StockScout",
+  "sourceCommit": "00a2d65a62256e5bc12c4d8e1118399a96ef8c57",
+  "exportedAt": "2026-08-22",
+  "legacyShadowSource": {
+    "repository": "RyanJHamby/stock-screener",
+    "repositoryCommit": "2fce788b7c95e595bdbb012bd35d3a92fcc49e5a",
+    "sourceFile": "src/screening/phase_indicators.py",
+    "sourceFileCommit": "c2737ffa2e22409f40de955f519c40079826ecaf",
+    "sourceSha256": "6e8bd4d6b3720624776436815f0c998d444271e53efca06da138bd1b2231b263",
+    "adapterFile": "src/stockscout_eod/vendor/ryan_phase.py",
+    "adapterSha256": "b5902dee7bc89afde03b11f58d96e4465c01c009df2fc4c827a58a7518b6ea42",
+    "license": "MIT",
+    "affectsRanking": false
+  },
+  "frozenFiles": {
+    "scoring/focus_blend.py": {"sha256": "884ffab7ac87ede45e2d9876bda029e7f5ecc15b380840a915dc2dce32a66586", "source": "commit"},
+    "scoring/scorer.py": {"sha256": "fa77a31bf5df96cc39113646d13806d8dd2eb1583d7b7759654940d517deea6b", "source": "commit"},
+    "scoring/trade_plan.py": {"sha256": "6b19202f8b3c858728fd4ba0d8f79d097109f4cd05a15d5878fd6e78e13f3946", "source": "commit"},
+    "setups/rwb_squeeze_thrust.py": {"sha256": "398c8ee90198aad1a03fee8c4f015c938114423a9f5e18f30c5f756321d745a1", "source": "commit"},
+    "setups/ma_cluster_volume_breakout.py": {"sha256": "d5dd4413c19cd1c0e554055e03d2f5859014c2f76dc95b75f55d34dc372f3024", "source": "commit"}
+  },
+  "promotedFiles": {
+    "notifications/telegram.py": {"sha256": "ff18b8b3cc0981c8fd9eca8e9cf7f8c5ff62791a64d282ac5b09ef33bf387aa1", "source": "public-product"}
+  }
+}

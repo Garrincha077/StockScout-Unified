@@ -1,0 +1,68 @@
+# Public, keyless GitHub runner profile. Detector and scoring values intentionally
+# come from the frozen production defaults in stock_scout.config.schema.
+providers:
+  primary_data_provider: yfinance
+  secondary_validation_provider: null
+  broker_provider: null
+  fallback_provider: stooq
+  tertiary_fallback_provider: null
+  sector_provider: null
+  deep_history_provider: stooq
+
+yfinance:
+  enabled: true
+  max_workers: 4
+  batch_size: 50
+  retry_attempts: 3
+  retry_backoff_seconds: 2.0
+  requests_per_second: 2.0
+  rate_limit_cooldown_seconds: 60.0
+  rate_limit_pool_pause_threshold: 10
+  rate_limit_pool_pause_seconds: 300.0
+  use_curl_cffi_session: true
+  request_timeout_seconds: 30.0
+
+marketdata:
+  enabled: false
+  scan_local_first: false
+  scan_provider_fallback: true
+  chart_provider_backfill: false
+  price_basis: split_only
+
+fetch:
+  per_ticker_timeout_seconds: 90.0
+  circuit_breaker_empty_pct: 0.8
+  circuit_breaker_min_samples: 50
+  health_precheck: true
+  sector_enrich_from_profiles: false
+  sector_enrich_max_new_per_run: 0
+
+cache:
+  # One split-only daily history powers both timeframes in the portable runner.
+  # Weekly bars are resampled from it, matching the private local-store path and
+  # avoiding yfinance's dividend-adjusted weekly default.
+  daily_history_years: 10
+  weekly_history_years: 10
+
+ai_ranker:
+  enabled: false
+  provider: none
+
+validation:
+  enabled: false
+
+reports:
+  output_markdown: false
+  output_csv: false
+  output_json: false
+  send_email: false
+  send_telegram: false
+
+automation:
+  enabled: false
+  run_ai: false
+
+trading:
+  enable_paper_trading: false
+  enable_live_trading: false
+  require_manual_approval: true

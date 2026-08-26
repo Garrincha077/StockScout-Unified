@@ -1,0 +1,12 @@
+.lc-shadow-badge{position:fixed;top:58px;right:18px;z-index:70;display:flex;align-items:center;gap:7px;padding:6px 9px;border:1px solid #314158;border-radius:999px;background:rgba(8,17,29,.94);box-shadow:0 6px 20px rgba(0,0,0,.24);font-size:11px;line-height:1;letter-spacing:.03em;pointer-events:none}
+.lc-shadow-badge span{font-size:9px;color:#93a4bb;letter-spacing:.12em}
+.lc-shadow-badge b{font-size:11px;color:#d8e3f0}
+.lc-shadow-badge small{font-size:10px;color:#73849a}
+.lc-shadow-badge.lc-confirmed{border-color:#2d765d}
+.lc-shadow-badge.lc-confirmed b{color:#61d9a6}
+.lc-shadow-badge.lc-early{border-color:#756730}
+.lc-shadow-badge.lc-early b{color:#e3c96d}
+.lc-shadow-badge.lc-conflict,.lc-shadow-badge.lc-risk{border-color:#82414c}
+.lc-shadow-badge.lc-conflict b,.lc-shadow-badge.lc-risk b{color:#f08b98}
+.lc-shadow-badge.lc-neutral,.lc-shadow-badge.lc-unavailable{opacity:.82}
+@media(max-width:700px){.lc-shadow-badge{top:96px;right:8px;padding:5px 7px;gap:5px}.lc-shadow-badge small{display:none}}

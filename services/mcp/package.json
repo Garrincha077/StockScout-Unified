@@ -1,0 +1,25 @@
+{
+  "name": "stockscout-unified-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node ./node_modules/typescript/bin/tsc --noEmit",
+    "test": "npm run build && npm run test:contract",
+    "test:contract": "node ./node_modules/typescript/bin/tsc --noEmit false --outDir .contract-dist && node --test .contract-dist/test/*.js && node -e \"require('node:fs').rmSync('.contract-dist',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "@hono/node-server": "2.0.11"
+  }
+}

@@ -1,0 +1,5 @@
+.dv-minicard{position:relative!important}
+.dv-minicard>header{padding-right:42px!important}
+.dv-minicard .dv-heart{position:absolute!important;top:7px!important;right:7px!important;z-index:30!important;display:grid!important;place-items:center!important;width:34px!important;height:34px!important;margin:0!important;padding:0!important;border:1px solid #3f556e!important;border-radius:50%!important;background:#0d1b2a!important;color:#a8b7c7!important;font-size:25px!important;line-height:1!important;cursor:pointer!important;box-shadow:0 2px 12px rgba(0,0,0,.35)!important}
+.dv-minicard .dv-heart.on{color:#ff5f73!important;border-color:#ff5f73!important;background:#2c111a!important}
+.dv-minicard .dv-heart:hover{color:#ff8796!important;border-color:#ff8796!important;transform:scale(1.06)!important}

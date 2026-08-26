@@ -1,0 +1,16 @@
+{
+  "name": "StockScout Unified",
+  "short_name": "Scout Unified",
+  "description": "Three independent end-of-day stock screeners in one mobile-first app.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#07111d",
+  "theme_color": "#08111f",
+  "categories": ["finance", "productivity"],
+  "icons": [
+    {"src": "./icons/stockscout.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}
+  ]
+}
