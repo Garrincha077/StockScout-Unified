@@ -9,13 +9,13 @@
     "commit": "a878b671e936cbb6e2f37d2d170740300885aa8b",
     "priceBasis": "split_div",
     "criticalFiles": {
-      "engines/next/run_fast_scan.py": "be493be524c0db7da78e38a15744c480b676c5eea67d3c602aca3c0c1db95c62",
-      "engines/next/enrich_original_engine.py": "acbb9b3b26d926c695ba4dc29082f113fd1c831f4e727633f122cf5f0d2f0d79",
-      "engines/next/complete_legacy_capture.py": "10ddb2aaa1b36c5acf98b95f0b7fe6c06657abcf35b2e990d292a2f097e0c2c7",
-      "engines/next/compute_opportunity_v2.py": "746f3f6788848f80984b4c8edb8fc7b7f327a2cdd5d485a8a46210799e694067",
-      "engines/next/finalize_opportunity_v2.py": "7f8c69330433c56c1288136aacdff3b4313c4f2b4224f0332591518839af710d",
-      "engines/next/config/legacy_baseline.json": "5deb2a552c155666fc5770ec26b8dfe57bf0d3d63368970fdcff165534cef0cb",
-      "engines/next/requirements.txt": "5604ee7fce85ea58cc86b06962dd2855ca02e594a432ae1032b665ff6839210f"
+      "engines/next/run_fast_scan.py": "7f65caf0d80399419c8ad5098db784b9c538956b5c9f6385c12d5440f341050b",
+      "engines/next/enrich_original_engine.py": "6d24b172be073e8e85bb03e6fee81e2c1c864ca4fadb525f38a01d73a439a488",
+      "engines/next/complete_legacy_capture.py": "217ec0535bbdc8504580dc82fd86ed5247a175b125063d41a8fa55115bf7a780",
+      "engines/next/compute_opportunity_v2.py": "6325be1da5d9b052a3a9477c3b26801eb136eccc033565461c476605c30fe4d4",
+      "engines/next/finalize_opportunity_v2.py": "1769c50c9d20debff76a99eeece32f055d1d0f091e4ef7259bc0fb03f6b4613f",
+      "engines/next/config/legacy_baseline.json": "97cf95a6faad83051eeede0114f04f6d8c4dfa38eee3027e3868fca1b10261aa",
+      "engines/next/requirements.txt": "da56d2c8cb5498f9f4546707658532c0b1ce7590e034f842000a3dc9a2a181a0"
     }
   },
   "ryan-original": {

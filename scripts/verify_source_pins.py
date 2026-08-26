@@ -29,7 +29,10 @@ def main() -> None:
         path = (ROOT / relative).resolve()
         if not path.is_file() or ROOT not in path.parents:
             raise SystemExit(f"pinned Next source is missing or outside the repository: {relative}")
-        actual = sha256(path.read_bytes()).hexdigest()
+        # Git normalizes these Python/text sources to LF. Windows checkouts may
+        # present CRLF bytes, so pin the canonical repository content rather
+        # than the workstation-specific line endings.
+        actual = sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
         if actual != expected:
             raise SystemExit(f"vendored Next source drifted from {pins['next']['commit']}: {relative}")
     print("Source pins agree: Bottom Fishing, Next, and frozen Ryan Original")
