@@ -1,6 +1,10 @@
 name: StockScout Unified EOD
 
 on:
+  # Temporary pre-merge bootstrap; removed immediately after the requested-date run starts.
+  push:
+    branches:
+      - codex/unified-app
   schedule:
     - cron: "30 21 * * 1-5"
   workflow_dispatch:
@@ -57,7 +61,7 @@ jobs:
         id: guard
         shell: bash
         env:
-          REQUESTED_DATE: ${{ inputs.scan_date }}
+          REQUESTED_DATE: ${{ github.event_name == 'push' && '2026-08-25' || inputs.scan_date }}
         run: |
           args=(guard --active-manifest https://garrincha077.github.io/StockScout-Unified/data/manifest.json --github-output "$GITHUB_OUTPUT")
           if [ -n "$REQUESTED_DATE" ]; then args+=(--requested-date "$REQUESTED_DATE"); fi
