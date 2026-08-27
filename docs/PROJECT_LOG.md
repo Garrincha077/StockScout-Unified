@@ -100,3 +100,13 @@
   Unified Pages site/redirect URL with public signup disabled, the PR CI check is
   required on `main`, a manual `notify=false` run succeeds, and five consecutive
   scheduled sessions pass.
+
+## 2026-08-27 — Unified filter-contract EOD hotfix
+
+- The first post-merge `notify=false` EOD run completed Bottom Fishing and the
+  full Next/Ryan scan, then failed during the sortable-field audit because that
+  audit still assumed the upstream Next frontend lived under `engines/next`.
+- Made the audit resolve both the upstream layout and Unified's repository-root
+  shared frontend, matching the portability contract already used by the payload
+  publisher. Added a regression test that loads the real Unified Filter Builder
+  fields; ranking, scoring, price basis, and source repositories are unchanged.

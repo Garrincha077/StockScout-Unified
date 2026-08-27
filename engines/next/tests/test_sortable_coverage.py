@@ -34,6 +34,12 @@ def test_valid_does_not_treat_null_or_nan_as_data():
     assert audit.valid(False)
 
 
+def test_frontend_fields_loads_unified_filter_contract():
+    fields = audit.frontend_fields()
+    field_ids = {field["id"] for field in fields}
+    assert {"opportunityScore", "rsRank", "fundamentalEvidenceScore"} <= field_ids
+
+
 def test_build_report_passes_complete_core(monkeypatch):
     monkeypatch.setattr(audit, "frontend_fields", lambda: [{"id": "rsRank", "label": "RS", "kind": "number"}])
     report = audit.build_report(payload([row("AAA"), row("BBB")]))
