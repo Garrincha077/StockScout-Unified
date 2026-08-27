@@ -49,7 +49,9 @@ def test_existing_snapshot_workflow_contains_no_scan_or_notification_delivery() 
     assert "next_snapshot_commit" in workflow
     assert "Next engine source commit mismatch" in workflow
     assert "verify_next_chart_snapshot.py" in workflow
-    assert "StockScreener-next/data/charts" in workflow
+    assert "next-pages-artifact.zip" in workflow
+    assert "NEXT_PAGES_ASSET_SHA256" in workflow
+    assert "Next Pages artifact workflow run mismatch" in workflow
     assert "publish-bottom" in workflow
     assert "publish-adjusted" in workflow
     assert REUSABLE_DEPLOY in workflow

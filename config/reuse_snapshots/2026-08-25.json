@@ -11,5 +11,17 @@
   "sourceCloudPayloadHash": "26b02fcef4eed5929d42d5923a6c69dde09f124944b77b945b2883f7eb29a221",
   "nextSourceCommit": "a878b671e93617f3331604a8ea4eea592fddc6e4",
   "nextSnapshotCommit": "1f70ebeca09663d360a3ea324645ee26726cdc06",
-  "nextCanonicalSha256": "0f5411ec28277f391d6a349ce1a9ea964adf6db65158eb519271a99a26061e92"
+  "nextCanonicalSha256": "0f5411ec28277f391d6a349ce1a9ea964adf6db65158eb519271a99a26061e92",
+  "nextPagesArtifact": {
+    "repository": "Garrincha077/StockScreener-next",
+    "workflowRunId": "32903235954",
+    "artifactId": "9585078313",
+    "name": "github-pages"
+  },
+  "nextPagesReleaseAsset": {
+    "releaseTag": "reuse-data-2026-08-25",
+    "name": "next-pages-2026-08-25-32903235954.zip",
+    "sha256": "55a0ddb24a1b8b2c6925dcda939932ba31240a4930544472e77e79bb6ef0682f",
+    "bytes": 49924614
+  }
 }
