@@ -49,6 +49,9 @@ def _parser() -> argparse.ArgumentParser:
     adjusted.add_argument("--run-id", required=True)
     adjusted.add_argument("--session-date", required=True)
     adjusted.add_argument("--min-chart-coverage", type=float, default=95.0)
+    adjusted.add_argument("--factor-regime")
+    adjusted.add_argument("--gmli-context")
+    adjusted.add_argument("--source-commit")
 
     activate = commands.add_parser("activate", help="Atomically activate a healthy three-mode run")
     activate.add_argument("--public-dir", required=True)
@@ -191,6 +194,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             run_id=args.run_id,
             session_date=args.session_date,
             min_chart_coverage_pct=args.min_chart_coverage,
+            factor_regime_path=args.factor_regime,
+            gmli_context_path=args.gmli_context,
+            source_commit=args.source_commit,
         )
         print(json.dumps(wire_dump(manifest), sort_keys=True))
         return 0

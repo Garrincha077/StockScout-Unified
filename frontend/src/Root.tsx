@@ -1,20 +1,53 @@
-import {useState} from 'react'
+import {lazy,Suspense,useEffect,useState} from 'react'
 import DeepVueTerminal from './DeepVueTerminal'
-import RyanOriginalDashboard from './RyanOriginalDashboard'
 import GroupsPage from './GroupsPage'
 import OwnerAccess from './owner/OwnerAccess'
 import {useStockScoutData} from './data/StockScoutDataProvider'
 import {MODES,useMode} from './modes/ModeProvider'
 import './modes/modes.css'
 
+const RyanOriginalDashboard=lazy(()=>import('./RyanOriginalDashboard'))
+const FactorRegimePage=lazy(()=>import('./FactorRegimePage'))
+const GmliContextPage=lazy(()=>import('./GmliContextPage'))
+type NextView='screener'|'groups'|'factors'|'gmli'
+const NEXT_VIEWS=new Set<NextView>(['screener','groups','factors','gmli'])
+
+function initialView():NextView{
+  const value=new URLSearchParams(location.search).get('view') as NextView|null
+  return value&&NEXT_VIEWS.has(value)?value:'screener'
+}
+
 export default function Root(){
   const{mode,definition,setMode}=useMode()
   const{selectTicker,manifest}=useStockScoutData()
-  const[view,setView]=useState<'terminal'|'groups'>('terminal')
+  const[view,setViewState]=useState<NextView>(initialView)
+
+  const setView=(next:NextView)=>{
+    setViewState(next)
+    const url=new URL(location.href)
+    if(mode==='next')url.searchParams.set('view',next)
+    else url.searchParams.delete('view')
+    history.replaceState(history.state,'',`${url.pathname}${url.search}${url.hash}`)
+  }
+
+  useEffect(()=>{
+    const sync=()=>setViewState(mode==='next'?initialView():'screener')
+    window.addEventListener('popstate',sync)
+    return()=>window.removeEventListener('popstate',sync)
+  },[mode])
 
   const openTicker=(ticker:string)=>{
     selectTicker(ticker)
-    setView('terminal')
+    setView('screener')
+  }
+
+  const selectMode=(nextMode:typeof mode)=>{
+    const url=new URL(location.href)
+    if(nextMode==='next')url.searchParams.set('view','screener')
+    else url.searchParams.delete('view')
+    history.replaceState(history.state,'',`${url.pathname}${url.search}${url.hash}`)
+    setViewState('screener')
+    setMode(nextMode)
   }
 
   return <div className={`unified-app mode-${mode}`}>
@@ -29,7 +62,7 @@ export default function Root(){
           key={item.id}
           className={item.id===mode?'active':''}
           aria-pressed={item.id===mode}
-          onClick={()=>{setMode(item.id);setView('terminal')}}
+          onClick={()=>selectMode(item.id)}
         >{item.label}</button>)}
       </nav>
       <div className="mode-meta">
@@ -37,11 +70,11 @@ export default function Root(){
         <span>{definition.priceBasis==='split_only'?'Split-only':'Adjusted'}</span>
       </div>
     </header>
-    {view==='groups'
-      ?<GroupsPage onBack={()=>setView('terminal')} onOpenTicker={openTicker}/>
-      :<>
-        {mode==='ryan-original'?<RyanOriginalDashboard/>:<DeepVueTerminal/>}
-        <button className="dv-groups-launch" onClick={()=>setView('groups')}>◎ Groups</button>
-      </>}
+    {mode==='next'?<nav className="next-view-nav" aria-label="Next workspace">
+      {(['screener','groups','factors','gmli'] as const).map(item=><button key={item} className={view===item?'active':''} aria-current={view===item?'page':undefined} onClick={()=>setView(item)}>{item==='gmli'?'GMLI':item[0].toUpperCase()+item.slice(1)}</button>)}
+    </nav>:null}
+    <Suspense fallback={<div className="unified-view-loading" role="status">Loading workspace…</div>}>
+      {mode==='ryan-original'?<RyanOriginalDashboard/>:mode!=='next'||view==='screener'?<DeepVueTerminal/>:view==='groups'?<GroupsPage onOpenTicker={openTicker}/>:view==='factors'?<FactorRegimePage/>:<GmliContextPage/>}
+    </Suspense>
   </div>
 }

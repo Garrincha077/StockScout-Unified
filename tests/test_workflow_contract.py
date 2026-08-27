@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "eod.yml"
@@ -25,3 +26,38 @@ def test_recovery_skips_telegram_rendering_when_notifications_are_disabled() -> 
     assert "python -m stockscout_unified.cli notify" in workflow
     eod = WORKFLOW.read_text(encoding="utf-8")
     assert "      notify: ${{ inputs.notify }}" in eod
+
+
+def test_next_contexts_and_groups_fail_closed_before_publish() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    audit = workflow.index("python audit_group_leadership.py")
+    contexts = workflow.index("python scripts/build_next_contexts.py")
+    publish = workflow.index("publish-adjusted --mode next")
+    assert audit < publish
+    assert contexts < publish
+    assert "--factor-regime .staging/next-context/factor-regime.json" in workflow
+    assert "--gmli-context .staging/next-context/gmli-context.json" in workflow
+    assert "python scripts/check_owner_config.py" in workflow
+    assert "REQUIRE_OWNER: ${{ github.event_name == 'schedule' || inputs.notify }}" in workflow
+
+
+def test_required_ci_covers_every_public_contract() -> None:
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    for command in (
+        "python -m pytest -q",
+        "npm run check --prefix frontend",
+        "npm test --prefix services/mcp",
+        "deno test supabase/functions/unified-operations/index_test.ts",
+        "supabase@2.116.0 test db",
+        "npm run test:e2e --prefix frontend",
+    ):
+        assert command in workflow
+
+
+def test_all_third_party_actions_are_pinned_to_full_commit_shas() -> None:
+    for path in Path(".github/workflows").glob("*.yml"):
+        workflow = path.read_text(encoding="utf-8")
+        for reference in re.findall(r"^\s*uses:\s*([^\s#]+)", workflow, flags=re.MULTILINE):
+            if reference.startswith("./"):
+                continue
+            assert re.fullmatch(r"[^@]+@[0-9a-f]{40}", reference), (path, reference)

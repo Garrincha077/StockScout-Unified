@@ -3,24 +3,26 @@ import{createContext,useCallback,useContext,useEffect,useMemo,useRef,useState,ty
 import{useMode,type ModeId}from'../modes/ModeProvider'
 import{clearOwnerLocalStorage,nextOwnerWatchlist,normalizeOwnerTicker,ownerMagicLinkRedirect,watchlistAfterSessionChange,type JsonRecord}from'./ownerState'
 import{isBrowserSafeSupabaseKey,OWNER_DATA_SCHEMA}from'./supabasePublicConfig'
+import type{OwnerAlertPayloadV1}from'./alerts'
 
 type OwnerSupabaseClient=SupabaseClient<any,any,typeof OWNER_DATA_SCHEMA,any,any>
 const DEFAULT_WATCHLIST='Default'
-const TABLES={watchlists:'unified_watchlist_items',savedScreens:'unified_saved_screens',drawings:'unified_drawings',alerts:'unified_alerts'}as const
+const TABLES={watchlists:'unified_watchlist_items',savedScreens:'unified_saved_screens',drawings:'unified_drawings',alerts:'unified_alerts',alertEvents:'unified_alert_events'}as const
 
 export type OwnerSavedScreen={id:string;name:string;mode:ModeId;price_basis:string;definition:JsonRecord;created_at?:string;updated_at?:string}
 export type OwnerDrawing={id:string;ticker:string;interval:string;mode:ModeId;price_basis:string;payload:JsonRecord;created_at?:string;updated_at?:string}
 export type OwnerAlert={id:string;name:string;ticker:string|null;mode:ModeId;price_basis:string;payload:JsonRecord;enabled:boolean;created_at?:string;updated_at?:string}
+export type OwnerAlertEvent={id:number;alert_id:string;run_id:string;mode:ModeId;price_basis:string;payload:JsonRecord;triggered_at:string}
 export type OwnerSavedScreenInput={id?:string;name:string;definition:JsonRecord}
 export type OwnerDrawingInput={id?:string;ticker:string;interval:string;payload:JsonRecord}
-export type OwnerAlertInput={id?:string;name:string;ticker:string|null;payload:JsonRecord;enabled:boolean}
+export type OwnerAlertInput={id?:string;name:string;ticker:string|null;payload:OwnerAlertPayloadV1|JsonRecord;enabled:boolean}
 
 type OwnerContextValue={
   configured:boolean;loading:boolean;user:User|null;error:string;watchlist:string[]
   sendMagicLink:(email:string)=>Promise<boolean>;signOut:()=>Promise<void>;toggleWatch:(ticker:string)=>Promise<void>
   listSavedScreens:()=>Promise<OwnerSavedScreen[]>;saveSavedScreen:(screen:OwnerSavedScreenInput)=>Promise<void>;deleteSavedScreen:(id:string)=>Promise<void>
   listDrawings:(ticker:string)=>Promise<OwnerDrawing[]>;saveDrawing:(drawing:OwnerDrawingInput)=>Promise<void>;deleteDrawing:(id:string)=>Promise<void>
-  listAlerts:()=>Promise<OwnerAlert[]>;saveAlert:(alert:OwnerAlertInput)=>Promise<void>;deleteAlert:(id:string)=>Promise<void>
+  listAlerts:()=>Promise<OwnerAlert[]>;listAlertEvents:()=>Promise<OwnerAlertEvent[]>;saveAlert:(alert:OwnerAlertInput)=>Promise<void>;deleteAlert:(id:string)=>Promise<void>
 }
 
 const OwnerContext=createContext<OwnerContextValue|null>(null)
@@ -50,10 +52,11 @@ export function OwnerDataProvider({children}:{children:ReactNode}){
   const saveDrawing=useCallback(async(drawing:OwnerDrawingInput)=>{const{client:ownerClient,user:owner}=requireOwner(),ticker=normalizeOwnerTicker(drawing.ticker),interval=drawing.interval.trim();if(!interval||interval.length>20)throw new Error('Drawing interval must use 1-20 characters.');const values={ticker,interval,mode,price_basis:priceBasis,payload:drawing.payload};const result=drawing.id?await ownerClient.from(TABLES.drawings).update(values).eq('id',drawing.id).eq('user_id',owner.id):await ownerClient.from(TABLES.drawings).insert({user_id:owner.id,...values});if(result.error)throw result.error},[requireOwner,mode,priceBasis])
   const deleteDrawing=useCallback(async(id:string)=>{const{client:ownerClient,user:owner}=requireOwner();const{error:deleteError}=await ownerClient.from(TABLES.drawings).delete().eq('id',id).eq('user_id',owner.id);if(deleteError)throw deleteError},[requireOwner])
   const listAlerts=useCallback(async()=>{const{client:ownerClient,user:owner}=requireOwner();const{data,error:queryError}=await ownerClient.from(TABLES.alerts).select('id,name,ticker,mode,price_basis,payload,enabled,created_at,updated_at').eq('user_id',owner.id).eq('mode',mode).eq('price_basis',priceBasis).order('updated_at',{ascending:false});if(queryError)throw queryError;return(data??[])as OwnerAlert[]},[requireOwner,mode,priceBasis])
+  const listAlertEvents=useCallback(async()=>{const{client:ownerClient,user:owner}=requireOwner();const{data,error:queryError}=await ownerClient.from(TABLES.alertEvents).select('id,alert_id,run_id,mode,price_basis,payload,triggered_at').eq('user_id',owner.id).eq('mode',mode).eq('price_basis',priceBasis).order('triggered_at',{ascending:false}).limit(100);if(queryError)throw queryError;return(data??[])as OwnerAlertEvent[]},[requireOwner,mode,priceBasis])
   const saveAlert=useCallback(async(alert:OwnerAlertInput)=>{const{client:ownerClient,user:owner}=requireOwner(),name=alert.name.trim(),ticker=normalizeOwnerTicker(alert.ticker??'',true);if(!name||name.length>120)throw new Error('Alert name must use 1-120 characters.');const values={name,ticker,mode,price_basis:priceBasis,payload:alert.payload,enabled:alert.enabled};const result=alert.id?await ownerClient.from(TABLES.alerts).update(values).eq('id',alert.id).eq('user_id',owner.id):await ownerClient.from(TABLES.alerts).insert({user_id:owner.id,...values});if(result.error)throw result.error},[requireOwner,mode,priceBasis])
   const deleteAlert=useCallback(async(id:string)=>{const{client:ownerClient,user:owner}=requireOwner();const{error:deleteError}=await ownerClient.from(TABLES.alerts).delete().eq('id',id).eq('user_id',owner.id);if(deleteError)throw deleteError},[requireOwner])
 
-  const value=useMemo<OwnerContextValue>(()=>({configured:Boolean(config),loading,user,error,watchlist,sendMagicLink,signOut,toggleWatch,listSavedScreens,saveSavedScreen,deleteSavedScreen,listDrawings,saveDrawing,deleteDrawing,listAlerts,saveAlert,deleteAlert}),[config,loading,user,error,watchlist,sendMagicLink,signOut,toggleWatch,listSavedScreens,saveSavedScreen,deleteSavedScreen,listDrawings,saveDrawing,deleteDrawing,listAlerts,saveAlert,deleteAlert])
+  const value=useMemo<OwnerContextValue>(()=>({configured:Boolean(config),loading,user,error,watchlist,sendMagicLink,signOut,toggleWatch,listSavedScreens,saveSavedScreen,deleteSavedScreen,listDrawings,saveDrawing,deleteDrawing,listAlerts,listAlertEvents,saveAlert,deleteAlert}),[config,loading,user,error,watchlist,sendMagicLink,signOut,toggleWatch,listSavedScreens,saveSavedScreen,deleteSavedScreen,listDrawings,saveDrawing,deleteDrawing,listAlerts,listAlertEvents,saveAlert,deleteAlert])
   return<OwnerContext.Provider value={value}>{children}</OwnerContext.Provider>
 }
 export function useOwnerData(){const value=useContext(OwnerContext);if(!value)throw new Error('useOwnerData must be used within OwnerDataProvider');return value}

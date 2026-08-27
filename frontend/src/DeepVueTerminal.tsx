@@ -58,6 +58,8 @@ import {
   type TradeStatus,
 } from "./data/contracts";
 import { useMode, type ModeId } from "./modes/ModeProvider";
+import StockChart from'./StockChart'
+import{ResizableHeight,ResizableWorkspace}from'./ResizablePanels'
 
 const OwnerWorkspace = lazy(() => import("./owner/OwnerWorkspace"));
 const ChartDrawingOverlay = lazy(
@@ -712,7 +714,9 @@ function DeepVueTerminal() {
   );
   const [activeScreen, setActiveScreen] = useState("Custom"),
     [builderOpen, setBuilderOpen] = useState(false),
-    [columnsOpen, setColumnsOpen] = useState(false);
+    [columnsOpen, setColumnsOpen] = useState(false),
+    [screenDialogOpen, setScreenDialogOpen] = useState(false),
+    [screenNameDraft, setScreenNameDraft] = useState("");
   const [selectedChart, setSelectedChart] = useState<ChartLoadState>({
     status: "loading",
     bars: [],
@@ -1629,10 +1633,11 @@ function DeepVueTerminal() {
       setBuilderOpen(true);
       return;
     }
-    const name = window.prompt(
-      "Screen name",
-      activeScreen === "Custom" ? "My Screen" : activeScreen,
-    );
+    setScreenNameDraft(activeScreen === "Custom" ? "My Screen" : activeScreen);
+    setScreenDialogOpen(true);
+  };
+  const confirmSaveScreen = () => {
+    const name = screenNameDraft.trim();
     if (!name) return;
     const state: ScreenState = {
       name,
@@ -1646,6 +1651,7 @@ function DeepVueTerminal() {
     };
     setCustomScreens((old) => [...old.filter((s) => s.name !== name), state]);
     setActiveScreen(name);
+    setScreenDialogOpen(false);
   };
   const deleteScreen = () => {
     if (builtInScreens.some((s) => s.name === activeScreen)) return;
@@ -2013,7 +2019,7 @@ function DeepVueTerminal() {
               canWatch={Boolean(owner.user)}
             />
           ) : (
-            <main className="dv-work">
+            <ResizableWorkspace id={`terminal-${mode}`} className="dv-work" defaultSecondary={600}>
               <div className="dv-tablebox">
                 <div className="dv-tablewrap">
                   <table>
@@ -2129,9 +2135,44 @@ function DeepVueTerminal() {
                   toggleWatch={() => toggleWatch(selectedFull.ticker)}
                 />
               )}
-            </main>
+            </ResizableWorkspace>
           )}
         </>
+      )}
+      {screenDialogOpen && (
+        <div className="dv-dialog-backdrop" role="presentation">
+          <form
+            className="dv-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="dv-save-screen-title"
+            onSubmit={(event) => {
+              event.preventDefault();
+              confirmSaveScreen();
+            }}
+          >
+            <small>SAVED SCREEN</small>
+            <h2 id="dv-save-screen-title">Name this screen</h2>
+            <p>Rules, columns, sorting and page size will be saved in this browser.</p>
+            <label>
+              Screen name
+              <input
+                autoFocus
+                maxLength={80}
+                value={screenNameDraft}
+                onChange={(event) => setScreenNameDraft(event.target.value)}
+              />
+            </label>
+            <div>
+              <button type="button" onClick={() => setScreenDialogOpen(false)}>
+                Cancel
+              </button>
+              <button type="submit" disabled={!screenNameDraft.trim()}>
+                Save screen
+              </button>
+            </div>
+          </form>
+        </div>
       )}
     </div>
   );
@@ -2635,7 +2676,7 @@ function MiniCard({
         )}
       </div>
       {state.status === "ready" ? (
-        <PriceChart bars={state.bars} interval={interval} range={range} mini />
+        <StockChart bars={state.bars} interval={interval} range={range} mini />
       ) : state.status === "loading" ? (
         <div className="dv-miniload">loading chart…</div>
       ) : state.status === "unavailable" ? (
@@ -3023,15 +3064,16 @@ function Detail({
           ? "EMA 10 · EMA 20 · SMA 50 · SMA 200"
           : "SMA 10W · SMA 20W"}
       </div>
+      <ResizableHeight id={`terminal-chart-${scannerMode}`} className="dv-chart-resizer" defaultHeight={410}>
       <div className="dv-chartbox">
         {chart.status === "loading" ? (
           <div className="dv-chartmsg">Loading 5Y history…</div>
         ) : chart.status === "ready" ? (
-          <PriceChart
+          <StockChart
             bars={chart.bars}
             interval={interval}
             range={range}
-            mode={mode}
+            display={mode}
             stock={stock}
           />
         ) : chart.status === "unavailable" ? (
@@ -3051,6 +3093,7 @@ function Detail({
           </div>
         )}
       </div>
+      </ResizableHeight>
       <div className="dv-kpis">
         <K l="RS Rank" v={fmt(stock.rsRank, 0)} d={stock.rsRankDelta} />
         <K l="RS Δ" v={fmt(stock.rsAcceleration, 2)} />

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import tempfile
 from collections.abc import Mapping
@@ -27,6 +28,7 @@ from .contracts import MODE_SPECS, ModeId, ModePointerV1, UnifiedManifestV1
 DETAIL_BUCKETS = 128
 HISTORY_LIMIT = 20
 PUBLIC_BASE_URL = "https://garrincha077.github.io/StockScout-Unified"
+GROUP_MODEL = "behavioral-proxy-v2-confidence"
 
 
 def _number(value: Any, default: float = 0.0) -> float:
@@ -98,6 +100,60 @@ def _safe_detail(row: Mapping[str, Any]) -> dict[str, Any]:
         return str(value)
 
     result = cast(dict[str, Any], clean(dict(row)))
+    assert_public_safe(result)
+    return result
+
+
+def _validated_groups(value: Any, *, universe: int) -> dict[str, Any]:
+    """Validate the aggregate Next group board before making it public."""
+    if not isinstance(value, Mapping):
+        raise ValueError("next group aggregate is missing")
+    if value.get("method") != GROUP_MODEL:
+        raise ValueError(f"next group model must be {GROUP_MODEL}")
+    result = _safe_detail(value)
+    for coverage_key in ("sectorCoverage", "industryCoverage"):
+        coverage = result.get(coverage_key)
+        if not isinstance(coverage, int) or isinstance(coverage, bool) or not 0 < coverage <= universe:
+            raise ValueError(f"next groups {coverage_key} must be within 1..{universe}")
+    for collection_key in ("sectors", "industries"):
+        collection = result.get(collection_key)
+        if not isinstance(collection, list) or not collection:
+            raise ValueError(f"next groups {collection_key} is empty")
+        for index, row in enumerate(collection):
+            if not isinstance(row, Mapping):
+                raise ValueError(f"next groups {collection_key}[{index}] is invalid")
+            if not str(row.get("ticker") or "").strip() or not str(row.get("name") or "").strip():
+                raise ValueError(f"next groups {collection_key}[{index}] has no ticker or name")
+            rank = _number(row.get("rank"), -1)
+            if not 0 <= rank <= 100:
+                raise ValueError(f"next groups {collection_key}[{index}] rank is outside 0..100")
+            if not isinstance(row.get("topTickers"), list):
+                raise ValueError(f"next groups {collection_key}[{index}] has no topTickers")
+    return result
+
+
+def _validated_context(path: str | Path, *, kind: str) -> dict[str, Any]:
+    source = Path(path)
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    if not isinstance(payload, Mapping) or payload.get("schemaVersion") != 1:
+        raise ValueError(f"{kind} context must use schemaVersion 1")
+    if kind == "factorRegime":
+        factors = payload.get("factors")
+        impact = (payload.get("method") or {}).get("stockScoutImpact") if isinstance(payload.get("method"), Mapping) else None
+        if not isinstance(factors, list) or len(factors) != 6 or not str(impact or "").startswith("none;"):
+            raise ValueError("factor regime must contain six read-only factors")
+    elif kind == "gmliContext":
+        contract = payload.get("consumerContract")
+        if (
+            payload.get("status") != "OK"
+            or not isinstance(contract, Mapping)
+            or contract.get("mode") != "READ_ONLY_SIDECAR"
+            or contract.get("mutatesStockScoutScoring") is not False
+        ):
+            raise ValueError("GMLI context violates its read-only consumer contract")
+    else:  # pragma: no cover - internal misuse guard
+        raise ValueError(f"unsupported context kind: {kind}")
+    result = _safe_detail(payload)
     assert_public_safe(result)
     return result
 
@@ -194,10 +250,18 @@ def publish_adjusted_mode(
     run_id: str,
     session_date: str,
     min_chart_coverage_pct: float = 95.0,
+    factor_regime_path: str | Path | None = None,
+    gmli_context_path: str | Path | None = None,
+    source_commit: str | None = None,
 ) -> ScanManifestV1:
     """Project the Next canonical audit snapshot into either Next or Ryan mode."""
     if mode not in {"next", "ryan-original"}:
         raise ValueError("publish_adjusted_mode only accepts next or ryan-original")
+    if source_commit is not None and mode != "next":
+        raise ValueError("source_commit override is reserved for immutable Next recovery")
+    effective_source_commit = source_commit or MODE_SPECS[mode].source_commit
+    if not re.fullmatch(r"[0-9a-f]{40}", effective_source_commit):
+        raise ValueError("adjusted source commit must be a full lowercase Git SHA")
     canonical = json.loads(Path(canonical_path).read_text(encoding="utf-8"))
     source_rows = [dict(row) for row in canonical.get("universe") or [] if isinstance(row, Mapping)]
     if not source_rows:
@@ -260,6 +324,8 @@ def publish_adjusted_mode(
             "detailShards": {ticker: _bucket(ticker) for ticker in tickers},
             "chartShards": chart_mapping,
         }
+        if mode == "next":
+            core["groups"] = _validated_groups(canonical.get("groups"), universe=len(rows))
         core_bytes = write_json(temporary / "core.json", core)
         excluded_bytes = write_json(
             temporary / "excluded.json",
@@ -329,6 +395,15 @@ def publish_adjusted_mode(
                 coveragePct=chart_coverage,
             ),
         }
+        if mode == "next":
+            for name, source in (("factorRegime", factor_regime_path), ("gmliContext", gmli_context_path)):
+                if source is None:
+                    continue
+                context = _validated_context(source, kind=name)
+                filename = "factor-regime.json" if name == "factorRegime" else "gmli-context.json"
+                payload = write_json(temporary / "contexts" / filename, context)
+                count = len(context.get("factors") or []) if name == "factorRegime" else 1
+                assets[name] = _descriptor(f"{run_relative}/contexts/{filename}", payload, count)
         manifest = ScanManifestV1(
             mode=mode,
             runId=run_id,
@@ -342,14 +417,14 @@ def publish_adjusted_mode(
             health=health,
             provenance={
                 "source": "vendored-stockscreener-next",
-                "sourceCommit": MODE_SPECS[mode].source_commit,
+                "sourceCommit": effective_source_commit,
                 "ranking": MODE_SPECS[mode].ranking,
                 "priceBasis": "split_div",
                 "affectsOtherModes": False,
             },
             versions={
                 "ranking": MODE_SPECS[mode].ranking,
-                "detectors": MODE_SPECS[mode].source_commit,
+                "detectors": effective_source_commit,
                 "tradePlan": "not-applicable",
             },
             assets=assets,

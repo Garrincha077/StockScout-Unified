@@ -60,3 +60,43 @@
 - Recovery now propagates `notify=false` into the reusable workflow and skips
   Telegram rendering entirely in that case, so a notification-formatting error
   cannot block an otherwise verified scan-free publication.
+
+## 2026-08-27 — Next/Ryan parity, owner UX, and delivery hardening
+
+- Updated the reviewed Next engine pin to
+  `528386109c5991ab8443ece446f85a48cc1e9c53` and refreshed normalized critical-file
+  hashes. Upstream `main` has since advanced; the new drift workflow reports that
+  condition without importing code automatically.
+- Made the validated Next Groups aggregate publication-critical and added isolated
+  Screener, Groups, Factors, and GMLI views. Factor and liquidity contexts are
+  hash-bound read-only sidecars with provenance, freshness, and last-good fallback;
+  ranking, trade-plan, Ryan baseline, and price-basis fields remain unchanged.
+- Reintroduced shared candlestick/volume/moving-average charts in Ryan Original,
+  including daily/weekly views, read-only Ryan levels, owner drawings/alerts, retry
+  states, and guarded Space navigation through the visible result order.
+- Replaced the dead resize implementation with accessible persisted splitters and
+  a mobile stacked layout. Added lazy context/chart surfaces, request de-duplication,
+  responsive owner dialogs, typed v1 alerts, stale/error/loading states, focus and
+  reduced-motion support, and removed prompt/raw-alert editing flows.
+- Hardened owner RLS with explicit authenticated/non-null checks and an 18-assertion
+  pgTAP allow/deny suite. Scheduled delivery now fails closed on missing/partial
+  owner configuration; manual `notify=false` remains usable for dry verification.
+- Added required PR CI, full-SHA action pins, Dependabot coverage, a hash-locked
+  vendored Next environment, upstream drift reporting, reusable Pages deploy/smoke,
+  exact active-run verification, and recovery publication that preserves historical
+  source provenance.
+- Local verification: Ruff passed; 156 Python tests passed with 2 intentional skips;
+  59 frontend tests and the production build passed; 6 desktop/mobile Playwright
+  fixtures, 3 MCP tests, and 3 Deno Edge tests passed. The live context builder
+  produced valid fresh Factors and GMLI sidecars. Local database RLS execution awaits
+  Docker, while Required CI provisions the local Supabase stack automatically.
+- Provisioned the separate `StockScout Unified Owner State` Supabase project
+  (`whmjhpaxpcepmpdykrdt`) in `eu-central-1`, exposed only the dedicated API schema,
+  applied the cloud-aligned migration history, deployed the OIDC-only operations
+  function, created one confirmed allowlisted owner, and set the three browser/
+  delivery repository variables. A rollback-only cloud RLS smoke test proved owner
+  read/write and non-owner denial; the security advisor reported no RLS findings.
+- Production cutover remains intentionally pending until hosted Auth uses the exact
+  Unified Pages site/redirect URL with public signup disabled, the PR CI check is
+  required on `main`, a manual `notify=false` run succeeds, and five consecutive
+  scheduled sessions pass.

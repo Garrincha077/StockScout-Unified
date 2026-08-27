@@ -16,6 +16,8 @@ import {
   type OriginalTabState,
 } from "./original/viewModel";
 import { useStockScoutData, type LegacyIndex } from "./data/StockScoutDataProvider";
+import StockChart,{normalizeChartRows,type ChartBar,type ChartInterval,type ChartPriceLine,type ChartRange}from'./StockChart'
+import{ResizableHeight,ResizableWorkspace}from'./ResizablePanels'
 import "./original-dashboard.css";
 
 const tabs: readonly OriginalTab[] = ["buy", "sell"];
@@ -184,6 +186,29 @@ function SignalReasons({ row, tab }: { row: OriginalCandidate; tab: OriginalTab 
   );
 }
 
+function numberOrNull(value:unknown){return value!==null&&value!==undefined&&Number.isFinite(Number(value))?Number(value):null}
+
+function RyanChartPanel({row}:{row:OriginalCandidate}){
+  const{loadChart}=useStockScoutData()
+  const[interval,setInterval]=useState<ChartInterval>('D'),[range,setRange]=useState<ChartRange>('2Y')
+  const[state,setState]=useState<{status:'loading'|'ready'|'unavailable'|'error';bars:ChartBar[];error?:string}>({status:'loading',bars:[]}),[retry,setRetry]=useState(0)
+  useEffect(()=>{let live=true;setState({status:'loading',bars:[]});loadChart(row.ticker,retry>0).then(result=>{if(!live)return;if(result.status==='ready'){const bars=normalizeChartRows(result.rows);setState(bars.length?{status:'ready',bars}:{status:'error',bars:[],error:'Chart payload has no valid EOD bars'})}else setState({...result,bars:[]})}).catch(reason=>{if(live)setState({status:'error',bars:[],error:reason instanceof Error?reason.message:String(reason)})});return()=>{live=false}},[loadChart,row.ticker,retry])
+  const lines=useMemo(()=>{
+    const buy=branch(originalEngine(row),'buy'),sell=branch(originalEngine(row),'sell'),items:[number|null,string,string,ChartPriceLine['style']][]=[
+      [numberOrNull(buy.entryPrice??buy.entryLevel??row.originalEntryPrice),'Original entry','#62a8ff','dashed'],
+      [numberOrNull(buy.stopLoss??row.originalStopLoss),'Original stop','#ff6f7d','solid'],
+      [numberOrNull(buy.rewardTarget??row.originalRewardTarget),'Original target','#46e394','dashed'],
+      [numberOrNull(sell.breakdownLevel??row.originalBreakdownLevel),'Sell breakdown','#f5a15d','dotted'],
+    ]
+    return items.flatMap(([price,title,color,style])=>price==null?[]:[{price,title,color,style}])
+  },[row])
+  return <section className="ryan-chart-panel" aria-label={`${row.ticker} price chart`}>
+    <header><div><span className="ryan-eyebrow">IMMUTABLE PUBLIC CHART</span><b>{row.ticker} · {interval==='D'?'Daily':'Weekly'}</b></div><div className="ryan-chart-controls"><button className={interval==='D'?'active':''} onClick={()=>setInterval('D')}>D</button><button className={interval==='W'?'active':''} onClick={()=>setInterval('W')}>W</button><select aria-label="Chart range" value={range} onChange={event=>setRange(event.target.value as ChartRange)}><option>6M</option><option>1Y</option><option>2Y</option><option>5Y</option></select></div></header>
+    <div className="ryan-chart-stage">{state.status==='ready'?<StockChart bars={state.bars} interval={interval} range={range} ticker={row.ticker} priceLines={lines}/>:state.status==='loading'?<div className="ryan-chart-state">Loading chart…</div>:<div className="ryan-chart-state" role="alert"><span>{state.status==='unavailable'?'Chart is not published for this ticker.':state.error||'Chart could not be loaded.'}</span><button onClick={()=>setRetry(value=>value+1)}>Retry</button></div>}</div>
+    <footer><span className="entry">Entry</span><span className="stop">Stop</span><span className="target">Target</span><span>Drag the lower edge to resize</span></footer>
+  </section>
+}
+
 function BuyTable({
   rows,
   selectedTicker,
@@ -340,6 +365,7 @@ function DetailPanel({
               <span>SELL {fmt(row.originalSellScore, 0)}</span>
             </div>
           </header>
+          <ResizableHeight id="ryan-chart" defaultHeight={460}><RyanChartPanel row={row}/></ResizableHeight>
           {loading ? <div className="ryan-detail-loading">Loading source detail shard…</div> : null}
           {error ? <div className="ryan-detail-error">{error} <button onClick={onRetry}>Retry</button></div> : null}
           {!loading && !error && !engine ? <div className="ryan-detail-loading">Source detail is unavailable for this ticker.</div> : null}
@@ -499,6 +525,19 @@ export default function RyanOriginalDashboard() {
     const nextRows = selectOriginalRows(rows, next, states[next]).rows;
     if (nextRows[0] && nextRows[0].ticker !== selectedTicker) selectTicker(nextRows[0].ticker);
   };
+  useEffect(()=>{
+    const onKeyDown=(event:KeyboardEvent)=>{
+      if(event.code!=='Space'||event.defaultPrevented||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey||!selection.filtered.length)return
+      const target=event.target instanceof Element?event.target:null
+      if(target?.closest('input,textarea,select,button,a,[contenteditable="true"],[role="dialog"]'))return
+      event.preventDefault()
+      const current=Math.max(0,selection.filtered.findIndex(row=>row.ticker===selectedRow?.ticker)),next=(current+1)%selection.filtered.length,row=selection.filtered[next]
+      updateState({page:Math.floor(next/ORIGINAL_PAGE_SIZE)})
+      selectTicker(row.ticker)
+    }
+    window.addEventListener('keydown',onKeyDown)
+    return()=>window.removeEventListener('keydown',onKeyDown)
+  },[selection.filtered,selectedRow?.ticker,selectTicker,updateState])
   const pageStart = selection.filtered.length ? selection.page * ORIGINAL_PAGE_SIZE + 1 : 0;
   const pageEnd = Math.min((selection.page + 1) * ORIGINAL_PAGE_SIZE, selection.filtered.length);
   const detailRow = detail?.ticker === selectedRow?.ticker ? detail : selectedForDetail;
@@ -541,7 +580,7 @@ export default function RyanOriginalDashboard() {
         <SummaryCard label="SPY Phase / Regime" value={summary.spyPhase === null ? "—" : `Phase ${fmt(summary.spyPhase, 0)}`} tone="blue" detail={`${summary.spyPhaseName} · ${summary.spyTrend}`} />
       </section>
 
-      <section className="ryan-workspace">
+      <ResizableWorkspace id="ryan-workspace" className="ryan-workspace" defaultSecondary={540}>
         <div className="ryan-list-panel">
           <nav className="ryan-tabs" aria-label="Original signal type">
             {tabs.map((item) => (
@@ -567,7 +606,7 @@ export default function RyanOriginalDashboard() {
             />
             <span className="ryan-match-count">{selection.filtered.length.toLocaleString()} matches</span>
           </div>
-          <div className="ryan-table-note">{scopeLabel(selectedState.scope)} {tab.toUpperCase()} candidates · source scores are displayed without recalculation.</div>
+          <div className="ryan-table-note">{scopeLabel(selectedState.scope)} {tab.toUpperCase()} candidates · source scores are displayed without recalculation. Press <kbd>Space</kbd> for the next match.</div>
           {table}
           <footer className="ryan-pagination">
             <span>{pageStart}–{pageEnd} of {selection.filtered.length.toLocaleString()}</span>
@@ -579,7 +618,7 @@ export default function RyanOriginalDashboard() {
           </footer>
         </div>
         <DetailPanel row={detailRow} loading={detailLoading} error={detailError} onRetry={() => setDetailAttempt((value) => value + 1)} />
-      </section>
+      </ResizableWorkspace>
     </main>
   );
 }
