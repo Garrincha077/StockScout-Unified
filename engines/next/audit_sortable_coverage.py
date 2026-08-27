@@ -17,6 +17,11 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent
 DATASET = ROOT / "frontend" / "public" / "data" / "latest.json"
 FILTER_ENGINE = ROOT / "frontend" / "src" / "deepvue" / "filterEngine.ts"
+# The vendored Next source keeps its frontend beside this module, while Unified
+# owns the shared frontend at the repository root. Keep the audit portable
+# across both layouts without changing the audited field contract.
+if not FILTER_ENGINE.exists():
+    FILTER_ENGINE = ROOT.parent.parent / "frontend" / "src" / "deepvue" / "filterEngine.ts"
 REPORT = ROOT / "data" / "daily_scans" / "latest_data_quality.json"
 MODEL = "sortable-coverage-v1"
 
@@ -54,7 +59,7 @@ def valid(value: Any) -> bool:
 
 def frontend_fields(path: Path = FILTER_ENGINE) -> list[dict[str, str]]:
     text = path.read_text(encoding="utf-8")
-    return [{"id": f, "label": l, "kind": k} for f, l, k in FIELD_RE.findall(text)]
+    return [{"id": field, "label": label, "kind": kind} for field, label, kind in FIELD_RE.findall(text)]
 
 
 def field_coverage(rows: list[dict[str, Any]], field: str) -> dict[str, Any]:
@@ -78,8 +83,8 @@ def build_report(payload: dict[str, Any]) -> dict[str, Any]:
     complete_pct = round(100.0 * complete_rows / len(rows), 2) if rows else 0.0
 
     ma_cov = (payload.get("market") or {}).get("maCrossCoverage") or {}
-    ma_daily = float(((ma_cov.get("daily") or {}).get("coveragePct") or 0.0))
-    ma_weekly = float(((ma_cov.get("weekly") or {}).get("coveragePct") or 0.0))
+    ma_daily = float((ma_cov.get("daily") or {}).get("coveragePct") or 0.0)
+    ma_weekly = float((ma_cov.get("weekly") or {}).get("coveragePct") or 0.0)
 
     failures: list[str] = []
     for field, stats in critical.items():
