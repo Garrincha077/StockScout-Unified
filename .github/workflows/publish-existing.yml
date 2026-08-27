@@ -63,6 +63,20 @@ jobs:
           print(f"next_source_commit={source['nextSourceCommit']}")
           print(f"next_snapshot_commit={source['nextSnapshotCommit']}")
           print(f"next_canonical_sha256={source['nextCanonicalSha256']}")
+          pages = source["nextPagesArtifact"]
+          if pages["repository"] != "Garrincha077/StockScreener-next":
+              raise SystemExit("reuse Next Pages artifact repository is not allowlisted")
+          print(f"next_pages_repository={pages['repository']}")
+          print(f"next_pages_workflow_run_id={pages['workflowRunId']}")
+          print(f"next_pages_artifact_id={pages['artifactId']}")
+          print(f"next_pages_artifact_name={pages['name']}")
+          release_asset = source["nextPagesReleaseAsset"]
+          if release_asset["releaseTag"] != source["releaseTag"]:
+              raise SystemExit("Next Pages release asset is not tied to the reuse release")
+          print(f"next_pages_release_tag={release_asset['releaseTag']}")
+          print(f"next_pages_asset_name={release_asset['name']}")
+          print(f"next_pages_asset_sha256={release_asset['sha256']}")
+          print(f"next_pages_asset_bytes={release_asset['bytes']}")
           PY
 
       - name: Check out exact existing Next and Ryan result
@@ -155,20 +169,57 @@ jobs:
               raise SystemExit("Next canonical manifest hash mismatch")
           PY
 
-      - name: Download and verify the exact public Next chart snapshot
+      - name: Download and verify the immutable Next Pages chart snapshot
         shell: bash
         env:
-          SESSION_DATE: ${{ inputs.session_date }}
+          GH_TOKEN: ${{ github.token }}
+          NEXT_PAGES_WORKFLOW_RUN_ID: ${{ steps.identity.outputs.next_pages_workflow_run_id }}
+          NEXT_PAGES_RELEASE_TAG: ${{ steps.identity.outputs.next_pages_release_tag }}
+          NEXT_PAGES_ASSET_NAME: ${{ steps.identity.outputs.next_pages_asset_name }}
+          NEXT_PAGES_ASSET_SHA256: ${{ steps.identity.outputs.next_pages_asset_sha256 }}
+          NEXT_PAGES_ASSET_BYTES: ${{ steps.identity.outputs.next_pages_asset_bytes }}
         run: |
-          chart_root="https://garrincha077.github.io/StockScreener-next/data/charts"
+          archive=".staging/reuse/next-pages-artifact.zip"
+          archive_dir=".staging/reuse/next-pages-archive"
+          pages_dir=".staging/reuse/next-pages"
           chart_dir=".sources/next/frontend/public/data/charts"
+          mkdir -p "$archive_dir" "$pages_dir" "$chart_dir"
+          gh release download "$NEXT_PAGES_RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "$NEXT_PAGES_ASSET_NAME" \
+            --dir .staging/reuse
+          mv ".staging/reuse/$NEXT_PAGES_ASSET_NAME" "$archive"
+          echo "$NEXT_PAGES_ASSET_SHA256  $archive" | sha256sum --check --strict
+          test "$(stat -c '%s' "$archive")" = "$NEXT_PAGES_ASSET_BYTES"
+          unzip -q "$archive" -d "$archive_dir"
+          if [ -f "$archive_dir/artifact.tar" ]; then
+            tar -xf "$archive_dir/artifact.tar" -C "$pages_dir"
+          else
+            cp -a "$archive_dir/." "$pages_dir/"
+          fi
+          pages_manifest="$(find "$pages_dir" -type f -path '*/data/manifest.json' -print -quit)"
+          if [ -z "$pages_manifest" ]; then
+            echo "Next Pages artifact has no data/manifest.json" >&2
+            exit 1
+          fi
+          pages_data="${pages_manifest%/manifest.json}"
+          cmp --silent "$pages_manifest" .sources/next/frontend/public/data/manifest.json || {
+            echo "Next Pages artifact manifest differs from the pinned Next snapshot" >&2
+            exit 1
+          }
+          export NEXT_PAGES_WORKFLOW_RUN_ID
+          python - "$pages_manifest" <<'PY'
+          import json
+          import os
+          import sys
+
+          manifest = json.loads(open(sys.argv[1], encoding="utf-8").read())
+          actual = str(((manifest.get("provenance") or {}).get("source") or {}).get("workflowRunId") or "")
+          if actual != os.environ["NEXT_PAGES_WORKFLOW_RUN_ID"]:
+              raise SystemExit("Next Pages artifact workflow run mismatch")
+          PY
+          cp -a "$pages_data/charts/." "$chart_dir/"
           mkdir -p "$chart_dir"
-          export chart_root chart_dir SESSION_DATE
-          seq -w 0 127 | xargs -I{} -P 8 sh -c \
-            'curl --fail --silent --show-error --retry 3 --retry-all-errors \
-              -H "Cache-Control: no-cache" \
-              "$chart_root/{}.json?session=$SESSION_DATE" \
-              --output "$chart_dir/{}.json"'
           python scripts/verify_next_chart_snapshot.py \
             --canonical .sources/next/frontend/public/data/latest.json \
             --manifest .sources/next/frontend/public/data/manifest.json \

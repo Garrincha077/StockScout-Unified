@@ -110,3 +110,14 @@
   shared frontend, matching the portability contract already used by the payload
   publisher. Added a regression test that loads the real Unified Filter Builder
   fields; ranking, scoring, price basis, and source repositories are unchanged.
+
+## 2026-08-27 — Scan-free reuse publication hardening
+
+- The first reuse publication correctly rejected the mutable upstream Pages URL:
+  it had advanced to the 2026-08-27 Next session while the pinned reuse snapshot
+  was 2026-08-25. No mixed-session data was published.
+- Preserved the exact 2026-08-25 Next Pages artifact from upstream workflow
+  `32903235954` as a SHA-256-pinned asset in the Unified reuse release and changed
+  `publish-existing` to verify the release asset, embedded manifest, source commit,
+  workflow run, chart aggregate, and byte count before publishing. This keeps CI
+  independent of cross-repository artifact permissions and avoids a new market scan.
