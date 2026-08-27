@@ -12,7 +12,7 @@
     "test:contract": "node ./node_modules/typescript/bin/tsc --noEmit false --outDir .contract-dist && node --test .contract-dist/test/*.js && node -e \"require('node:fs').rmSync('.contract-dist',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
