@@ -1,0 +1,3 @@
+# Safe rollout trigger
+# Updating this marker intentionally starts a notify-free Unified EOD publish on main.
+rollout: 2026-08-27
