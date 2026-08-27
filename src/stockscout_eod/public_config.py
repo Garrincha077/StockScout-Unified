@@ -66,3 +66,41 @@ def validate_public_environment(
         "publishHost": _https_host(publish_url, "STOCKSCOUT_EOD_PUBLISH_URL"),
         "browserKeyKind": browser_key_kind(key),
     }
+
+
+def validate_owner_environment(
+    environment: Mapping[str, str] | None = None,
+    *,
+    required: bool = False,
+) -> dict[str, str]:
+    """Fail on partial owner configuration and bind delivery to its Supabase project."""
+
+    values = environment or os.environ
+    names = (
+        "VITE_SUPABASE_URL",
+        "VITE_SUPABASE_PUBLISHABLE_KEY",
+        "UNIFIED_DELIVERY_ENDPOINT",
+    )
+    configured = {name: values.get(name, "").strip() for name in names}
+    present = [name for name, value in configured.items() if value]
+    if not present:
+        if required:
+            raise PublicConfigError("owner configuration is required for this production run")
+        return {"configured": "false"}
+    if len(present) != len(names):
+        missing = ", ".join(name for name in names if not configured[name])
+        raise PublicConfigError(f"owner configuration is partial; missing: {missing}")
+
+    supabase_host = _https_host(configured["VITE_SUPABASE_URL"], "VITE_SUPABASE_URL")
+    delivery_host = _https_host(configured["UNIFIED_DELIVERY_ENDPOINT"], "UNIFIED_DELIVERY_ENDPOINT")
+    if delivery_host != supabase_host:
+        raise PublicConfigError("UNIFIED_DELIVERY_ENDPOINT must use the configured Supabase host")
+    delivery_path = urlsplit(configured["UNIFIED_DELIVERY_ENDPOINT"]).path.rstrip("/")
+    if not delivery_path.endswith("/functions/v1/unified-operations"):
+        raise PublicConfigError("UNIFIED_DELIVERY_ENDPOINT must target unified-operations")
+    return {
+        "configured": "true",
+        "supabaseHost": supabase_host,
+        "browserKeyKind": browser_key_kind(configured["VITE_SUPABASE_PUBLISHABLE_KEY"]),
+        "deliveryFunction": "unified-operations",
+    }

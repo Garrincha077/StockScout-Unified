@@ -6,7 +6,7 @@
   },
   "next": {
     "repository": "StockScreener-next",
-    "commit": "a878b671e93617f3331604a8ea4eea592fddc6e4",
+    "commit": "528386109c5991ab8443ece446f85a48cc1e9c53",
     "priceBasis": "split_div",
     "criticalFiles": {
       "engines/next/run_fast_scan.py": "7f65caf0d80399419c8ad5098db784b9c538956b5c9f6385c12d5440f341050b",
@@ -15,7 +15,11 @@
       "engines/next/compute_opportunity_v2.py": "6325be1da5d9b052a3a9477c3b26801eb136eccc033565461c476605c30fe4d4",
       "engines/next/finalize_opportunity_v2.py": "1769c50c9d20debff76a99eeece32f055d1d0f091e4ef7259bc0fb03f6b4613f",
       "engines/next/config/legacy_baseline.json": "97cf95a6faad83051eeede0114f04f6d8c4dfa38eee3027e3868fca1b10261aa",
-      "engines/next/requirements.txt": "da56d2c8cb5498f9f4546707658532c0b1ce7590e034f842000a3dc9a2a181a0"
+      "engines/next/requirements.txt": "da56d2c8cb5498f9f4546707658532c0b1ce7590e034f842000a3dc9a2a181a0",
+      "engines/next/compute_group_leadership.py": "a647bafe8e95f11d492668d1dc36a6ac855fa1e2bb8162bd1fd1c79e77877450",
+      "engines/next/audit_group_leadership.py": "1dbcd4b1a19a994686589a9d828d05abea43dbbbcd8bd1d7bf8a868d6022a99b",
+      "engines/next/build_factor_regime.py": "1090061fb38017f2432bef5b190c668e15068381a4c1bd57bfa2818ff8a18987",
+      "engines/next/refresh_gmli_context.py": "53bcabcefda70f9fc2607aa8516ebed87337a06a3fed20ae516e7e434b752857"
     }
   },
   "ryan-original": {

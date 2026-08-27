@@ -1,0 +1,32 @@
+name: Next Upstream Drift
+
+on:
+  schedule:
+    - cron: "17 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Compare the reviewed pin with upstream main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          pinned=$(python -c "import json; print(json.load(open('config/source_pins.json'))['next']['commit'])")
+          upstream=$(gh api repos/Garrincha077/StockScreener-next/commits/main --jq .sha)
+          {
+            echo "## Next upstream drift"
+            echo ""
+            echo "Reviewed Unified pin: \`$pinned\`"
+            echo "Upstream main: \`$upstream\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$pinned" != "$upstream" ]; then
+            echo "Upstream changed. Review and selectively port it; no files were updated." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi

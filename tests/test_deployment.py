@@ -5,6 +5,9 @@ from pathlib import Path
 from stockscout_eod.deployment import verify_pages_activation
 from stockscout_eod.jsonio import write_json
 
+DEPLOY_PAGES = "actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e"
+REUSABLE_DEPLOY = "uses: ./.github/workflows/deploy-pages.yml"
+
 
 def test_pages_activation_retries_old_pointer_then_matches_exact_hash(tmp_path) -> None:
     public = tmp_path / "public"
@@ -30,8 +33,10 @@ def test_unified_workflow_deploys_only_after_three_mode_activation() -> None:
     assert "stockscout_unified.cli activate" in workflow
     assert "Upload Pages artifact only after all three modes pass" in workflow
     assert "path: frontend/dist" in workflow
-    assert "actions/deploy-pages@v4" in workflow
-    assert "Verify the exact deployed run and all mode hashes" in workflow
+    assert REUSABLE_DEPLOY in workflow
+    reusable = Path(".github/workflows/deploy-pages.yml").read_text(encoding="utf-8")
+    assert DEPLOY_PAGES in reusable
+    assert "Verify exact remote run and every mode hash" in reusable
     assert workflow.index("stockscout_unified.cli activate") < workflow.index("actions/upload-pages-artifact")
 
 
@@ -47,7 +52,7 @@ def test_existing_snapshot_workflow_contains_no_scan_or_notification_delivery() 
     assert "StockScreener-next/data/charts" in workflow
     assert "publish-bottom" in workflow
     assert "publish-adjusted" in workflow
-    assert "actions/deploy-pages@v4" in workflow
+    assert REUSABLE_DEPLOY in workflow
     assert "group: stockscout-unified-eod" not in workflow
     carrier = Path(".github/workflows/eod.yml").read_text(encoding="utf-8")
     assert "reuse_existing:" in carrier

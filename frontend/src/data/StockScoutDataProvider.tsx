@@ -46,6 +46,7 @@ export class JsonPromiseCache{
 
 export const sharedDataCache=new JsonPromiseCache()
 const chartShardCache=new Map<string,Promise<unknown>>()
+const contextAssetCache=new Map<string,Promise<unknown>>()
 
 async function sha256Hex(payload:ArrayBuffer){
   const digest=await crypto.subtle.digest('SHA-256',payload)
@@ -86,7 +87,10 @@ function dataUrl(mode:ModeId,path:string){
 function unifiedDataUrl(path:string){return new URL(`${APP_ROOT}data/${path.replace(/^\//,'')}`,location.origin).toString()}
 function versionedUrl(mode:ModeId,asset:AssetDescriptor,path=asset.path){return`${dataUrl(mode,path)}?v=${encodeURIComponent(asset.sha256)}`}
 function tickerUrl(ticker:string,manifest:StockScoutManifest|null,mode:ModeId){
-  const query=new URLSearchParams({mode})
+  const query=new URLSearchParams(location.search)
+  query.delete('ticker')
+  query.set('mode',mode)
+  if(mode!=='next')query.delete('view')
   if(manifest&&isManifestV1(manifest))query.set('run',manifest.runId)
   return`${APP_ROOT}ticker/${encodeURIComponent(ticker)}?${query}`
 }
@@ -137,6 +141,7 @@ type DataContextValue={
   loadLegacyIndex:()=>Promise<LegacyIndex>
   loadLegacyDetail:(ticker:string,force?:boolean)=>Promise<StockScoutRow|null>
   loadChart:(ticker:string,retry?:boolean)=>Promise<ChartState>
+  loadContextAsset:<T>(kind:'factorRegime'|'gmliContext',retry?:boolean)=>Promise<T>
   loadOptional:<T>(path:string)=>Promise<T|null>
 }
 
@@ -292,6 +297,32 @@ export function StockScoutDataProvider({children}:{children:ReactNode}){
     }catch(nextError){return{status:'error',rows:[],error:String(nextError)}}
   },[manifest,core,mode])
 
+  const loadContextAsset=useCallback(async<T,>(kind:'factorRegime'|'gmliContext',retry=false):Promise<T>=>{
+    if(mode!=='next'||!manifest||!isManifestV1(manifest))throw new Error(`${kind} is available only in Next`)
+    const asset=manifest.assets[kind]
+    if(!asset)throw new Error(`${kind} is not published for this run`)
+    const key=`context:${kind}:${asset.sha256}`
+    if(retry)contextAssetCache.delete(key)
+    const existing=contextAssetCache.get(key)
+    if(existing)return existing as Promise<T>
+    const request=fetch(`${versionedUrl(mode,asset)}${retry?'&retry='+Date.now():''}`,{cache:retry?'no-store':'default'})
+      .then(async response=>{
+        if(!response.ok)throw new Error(`${kind} request failed with HTTP ${response.status}`)
+        const bytes=await response.arrayBuffer()
+        if(bytes.byteLength!==asset.bytes)throw new Error(`${kind} byte count does not match its manifest`)
+        if(await sha256Hex(bytes)!==asset.sha256)throw new Error(`${kind} hash does not match its manifest`)
+        const payload=JSON.parse(new TextDecoder().decode(bytes)) as Record<string,unknown>
+        if(!payload||typeof payload!=='object'||payload.schemaVersion!==1)throw new Error(`${kind} schema is unsupported`)
+        if(kind==='factorRegime'&&(!Array.isArray(payload.factors)||payload.factors.length!==6))throw new Error('Factor regime must contain six factors')
+        const contract=payload.consumerContract as Record<string,unknown>|undefined
+        if(kind==='gmliContext'&&(payload.status!=='OK'||contract?.mode!=='READ_ONLY_SIDECAR'||contract?.mutatesStockScoutScoring!==false))throw new Error('GMLI read-only contract is invalid')
+        return payload as T
+      })
+      .catch(error=>{contextAssetCache.delete(key);throw error})
+    contextAssetCache.set(key,request)
+    return request
+  },[manifest,mode])
+
   const loadOptional=useCallback(async<T,>(path:string):Promise<T|null>=>{
     try{return await sharedDataCache.load<T>(`optional:${mode}:${path}`,dataUrl(mode,path),{cache:'no-cache'})}
     catch{return null}
@@ -299,8 +330,8 @@ export function StockScoutDataProvider({children}:{children:ReactNode}){
 
   const value=useMemo<DataContextValue>(()=>({
     manifest,core,loading,error,selectedTicker,selectTicker,reviewScope,setReviewScope,reload,
-    loadCandidateDetail,loadExcluded,loadHistory,loadLegacyIndex,loadLegacyDetail,loadChart,loadOptional,
-  }),[manifest,core,loading,error,selectedTicker,selectTicker,reviewScope,reload,loadCandidateDetail,loadExcluded,loadHistory,loadLegacyIndex,loadLegacyDetail,loadChart,loadOptional])
+    loadCandidateDetail,loadExcluded,loadHistory,loadLegacyIndex,loadLegacyDetail,loadChart,loadContextAsset,loadOptional,
+  }),[manifest,core,loading,error,selectedTicker,selectTicker,reviewScope,reload,loadCandidateDetail,loadExcluded,loadHistory,loadLegacyIndex,loadLegacyDetail,loadChart,loadContextAsset,loadOptional])
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>
 }

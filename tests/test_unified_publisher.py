@@ -21,6 +21,33 @@ RUN_ID = "2026-08-24-eod-test"
 SESSION = "2026-08-24"
 
 
+def groups(count: int) -> dict:
+    row = {
+        "ticker": "XLK",
+        "name": "Technology",
+        "rank": 92,
+        "rel1m": 1.2,
+        "rel3m": 4.1,
+        "rel6m": 8.5,
+        "stocks": count,
+        "stage2Pct": 50.0,
+        "earlyLeaders": 1,
+        "medianOpportunity": 80.0,
+        "avgConfidence": 75.0,
+        "topTickers": ["AAA"],
+    }
+    return {
+        "method": "behavioral-proxy-v2-confidence",
+        "description": "fixture",
+        "sectorCoverage": count,
+        "industryCoverage": count,
+        "averageConfidence": 75.0,
+        "maxLeadershipAdjustmentPoints": 5.0,
+        "sectors": [row],
+        "industries": [{**row, "ticker": "IGV", "name": "Software"}],
+    }
+
+
 def descriptor(path: str, count: int = 1, coverage: float | None = None) -> AssetDescriptorV1:
     return AssetDescriptorV1(
         path=path,
@@ -117,6 +144,7 @@ def test_adjusted_modes_remain_isolated_and_activate_atomically(tmp_path: Path) 
         "market": {"scanDate": SESSION},
         "chartShardCount": 1,
         "chartShards": {"AAA": "000.json", "BBB": "000.json"},
+        "groups": groups(2),
         "universe": [
             {"ticker": "AAA", "price": 10, "score": 90, "opportunityScore": 90, "originalBuyScore": 61, "originalRunBuySignal": False, "originalEngine": {"buy": {"sourceReason": "watch"}}},
             {"ticker": "BBB", "price": 20, "score": 80, "opportunityScore": 80, "originalBuyScore": 95, "originalRunBuySignal": True, "originalEngine": {"buy": {"sourceReason": "buy"}}},
@@ -135,6 +163,9 @@ def test_adjusted_modes_remain_isolated_and_activate_atomically(tmp_path: Path) 
     next_core = json.loads((public / "data" / "modes" / "next" / next_manifest.assets["core"].path).read_text(encoding="utf-8"))
     ryan_core = json.loads((public / "data" / "modes" / "ryan-original" / ryan_manifest.assets["core"].path).read_text(encoding="utf-8"))
     assert [row["ticker"] for row in next_core["universe"]] == ["AAA", "BBB"]
+    assert next_core["groups"]["sectorCoverage"] == 2
+    assert next_core["groups"]["sectors"][0]["ticker"] == "XLK"
+    assert "groups" not in ryan_core
     assert [row["ticker"] for row in ryan_core["universe"]] == ["BBB", "AAA"]
     assert next_core["universe"][0]["id"] == f"scan:{RUN_ID}:mode:next:candidate:AAA"
     assert ryan_core["universe"][0]["id"] == f"scan:{RUN_ID}:mode:ryan-original:candidate:BBB"
@@ -170,6 +201,7 @@ def test_verify_accepts_bottom_manifest_backed_gzip_chart_shards(tmp_path: Path)
                 "market": {"scanDate": SESSION},
                 "chartShardCount": 1,
                 "chartShards": {"AAA": "000.json"},
+                "groups": groups(1),
                 "universe": [{"ticker": "AAA", "price": 10, "score": 90, "opportunityScore": 90}],
             }
         )
@@ -194,3 +226,122 @@ def test_verify_accepts_bottom_manifest_backed_gzip_chart_shards(tmp_path: Path)
     activate_unified(public_dir=public, run_id=RUN_ID, session_date=SESSION)
 
     assert verify(public).run_id == RUN_ID
+
+
+def test_next_rejects_missing_or_invalid_group_aggregate(tmp_path: Path) -> None:
+    chart_dir = tmp_path / "charts"
+    chart_dir.mkdir()
+    (chart_dir / "000.json").write_bytes(canonical_json_bytes({"AAA": []}))
+    canonical = {
+        "generatedAt": f"{SESSION}T22:00:00Z",
+        "market": {"scanDate": SESSION},
+        "chartShards": {"AAA": "000.json"},
+        "universe": [{"ticker": "AAA", "price": 10, "opportunityScore": 91}],
+    }
+    source = tmp_path / "latest.json"
+    source.write_bytes(canonical_json_bytes(canonical))
+    for invalid in (None, {**groups(1), "sectorCoverage": 0}, {**groups(1), "sectors": []}):
+        canonical["groups"] = invalid
+        source.write_bytes(canonical_json_bytes(canonical))
+        try:
+            publish_adjusted_mode(
+                mode="next",
+                canonical_path=source,
+                chart_dir=chart_dir,
+                public_dir=tmp_path / f"public-{len(str(invalid))}",
+                run_id=RUN_ID,
+                session_date=SESSION,
+            )
+        except ValueError as exc:
+            assert "group" in str(exc).lower()
+        else:
+            raise AssertionError("Next accepted an invalid group aggregate")
+
+
+def test_next_publishes_hash_bound_read_only_contexts(tmp_path: Path) -> None:
+    public = tmp_path / "public"
+    chart_dir = tmp_path / "charts"
+    chart_dir.mkdir()
+    (chart_dir / "000.json").write_bytes(canonical_json_bytes({"AAA": []}))
+    canonical = tmp_path / "latest.json"
+    canonical.write_bytes(canonical_json_bytes({
+        "generatedAt": f"{SESSION}T22:00:00Z",
+        "market": {"scanDate": SESSION},
+        "chartShards": {"AAA": "000.json"},
+        "groups": groups(1),
+        "universe": [{"ticker": "AAA", "price": 10, "opportunityScore": 91}],
+    }))
+    factor = tmp_path / "factor.json"
+    factor.write_bytes(canonical_json_bytes({
+        "schemaVersion": 1,
+        "generatedAt": f"{SESSION}T12:00:00Z",
+        "method": {"stockScoutImpact": "none; read-only independent macro/factor module"},
+        "factors": [{"sourceCode": code} for code in ("MKT_RF", "SMB", "HML", "RMW", "CMA", "MOM")],
+    }))
+    gmli = tmp_path / "gmli.json"
+    gmli.write_bytes(canonical_json_bytes({
+        "schemaVersion": 1,
+        "status": "OK",
+        "generatedAt": f"{SESSION}T12:00:00Z",
+        "consumerContract": {"mode": "READ_ONLY_SIDECAR", "mutatesStockScoutScoring": False},
+    }))
+    manifest = publish_adjusted_mode(
+        mode="next",
+        canonical_path=canonical,
+        chart_dir=chart_dir,
+        public_dir=public,
+        run_id=RUN_ID,
+        session_date=SESSION,
+        factor_regime_path=factor,
+        gmli_context_path=gmli,
+    )
+    assert manifest.assets["factorRegime"].count == 6
+    assert manifest.assets["gmliContext"].count == 1
+    for name in ("factorRegime", "gmliContext"):
+        asset = manifest.assets[name]
+        payload = (public / "data" / "modes" / "next" / asset.path).read_bytes()
+        assert len(payload) == asset.bytes
+        assert sha256_bytes(payload) == asset.sha256
+    core_asset = manifest.assets["core"]
+    core = json.loads((public / "data" / "modes" / "next" / core_asset.path).read_bytes())
+    assert core["universe"][0]["opportunityScore"] == 91
+    assert "factors" not in core["universe"][0]
+
+    ryan = publish_adjusted_mode(
+        mode="ryan-original",
+        canonical_path=canonical,
+        chart_dir=chart_dir,
+        public_dir=tmp_path / "ryan-public",
+        run_id=RUN_ID,
+        session_date=SESSION,
+        factor_regime_path=factor,
+        gmli_context_path=gmli,
+    )
+    assert "factorRegime" not in ryan.assets
+    assert "gmliContext" not in ryan.assets
+
+
+def test_next_recovery_can_preserve_its_historical_source_commit(tmp_path: Path) -> None:
+    chart_dir = tmp_path / "charts"
+    chart_dir.mkdir()
+    (chart_dir / "000.json").write_bytes(canonical_json_bytes({"AAA": []}))
+    canonical = tmp_path / "latest.json"
+    canonical.write_bytes(canonical_json_bytes({
+        "generatedAt": f"{SESSION}T22:00:00Z",
+        "market": {"scanDate": SESSION},
+        "chartShards": {"AAA": "000.json"},
+        "groups": groups(1),
+        "universe": [{"ticker": "AAA", "price": 10}],
+    }))
+    historical = "a878b671e93617f3331604a8ea4eea592fddc6e4"
+    manifest = publish_adjusted_mode(
+        mode="next",
+        canonical_path=canonical,
+        chart_dir=chart_dir,
+        public_dir=tmp_path / "public",
+        run_id=RUN_ID,
+        session_date=SESSION,
+        source_commit=historical,
+    )
+    assert manifest.provenance["sourceCommit"] == historical
+    assert manifest.versions["detectors"] == historical

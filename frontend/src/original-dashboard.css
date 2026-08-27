@@ -20,6 +20,7 @@
   width: min(1900px, 100%);
   margin: 0 auto;
 }
+.ryan-chart-panel{height:100%;min-height:0;padding:10px 12px 0;border-bottom:1px solid var(--ryan-line);background:#07131f}.ryan-chart-panel>header{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:38px;padding-right:92px}.ryan-chart-panel>header>div:first-child{display:grid;gap:3px}.ryan-chart-panel>header b{font-size:12px}.ryan-chart-controls{display:flex;gap:4px}.ryan-chart-controls button,.ryan-chart-controls select,.ryan-chart-state button{min-height:29px;border:1px solid #29445e;border-radius:6px;background:#0c1e2e;color:#91a9bc;padding:0 9px;font-size:10px;cursor:pointer}.ryan-chart-controls button.active{border-color:#27865d;background:#0d3324;color:var(--ryan-green)}.ryan-chart-stage{height:calc(100% - 76px);min-height:220px}.ryan-chart-stage .dv-chart{height:100%}.ryan-chart-state{height:100%;display:grid;place-content:center;justify-items:center;gap:9px;border:1px dashed #294158;border-radius:8px;color:#7891a7;font-size:11px}.ryan-chart-panel>footer{display:flex;align-items:center;gap:12px;height:30px;color:#647d94;font-size:9px}.ryan-chart-panel>footer span::before{display:inline-block;width:12px;height:2px;margin-right:4px;vertical-align:middle;background:#60788d;content:""}.ryan-chart-panel>footer .entry::before{background:#62a8ff}.ryan-chart-panel>footer .stop::before{background:#ff6f7d}.ryan-chart-panel>footer .target::before{background:#46e394}.ryan-chart-panel>footer span:last-child{margin-left:auto}.ryan-table-note kbd{padding:2px 5px;border:1px solid #34506a;border-bottom-width:2px;border-radius:4px;background:#0d1e2d;color:#d7e5f1;font:9px ui-monospace,monospace}
 
 .ryan-hero {
   display: flex;
@@ -298,5 +299,6 @@
   .ryan-match-count { margin-left: auto; }
   .ryan-detail-head { padding: 14px 12px; }
   .ryan-detail-body { padding: 0 10px 14px; }
+  .ryan-chart-panel{height:auto;min-height:390px;padding:8px 8px 0}.ryan-chart-panel>header{padding-right:86px}.ryan-chart-stage{height:300px}.ryan-chart-panel>footer span:last-child{display:none}
   .ryan-source-values > div { grid-template-columns: 1fr; gap: 2px; }
 }
