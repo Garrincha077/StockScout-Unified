@@ -15,11 +15,13 @@ Repository secrets:
 - `TELEGRAM_BOT_TOKEN`;
 - `TELEGRAM_CHAT_ID`.
 
-No service-role key or provider cache belongs in GitHub. The `production` environment and `codex/unified-app` branch must be protected before the OIDC operations endpoint will accept delivery or alert requests.
+No service-role key or provider cache belongs in GitHub. The `production` environment and `main` branch must be protected before the OIDC operations endpoint will accept delivery or alert requests.
+
+Require the `Required CI / verify` check on `main`. It covers Python and source-pin contracts, the hash-locked Next runtime, frontend unit/type/build, MCP, Deno Edge tests, local-Supabase RLS tests, and fixture Playwright flows. Keep one approving review, linear history, force-push protection, and deletion protection enabled.
 
 ## Owner state
 
-Create a new Supabase project, apply `supabase/migrations`, and deploy `unified-operations` with JWT verification disabled at the platform gateway—the function verifies GitHub OIDC itself. Set the function secret `UNIFIED_PAGES_BASE_URL=https://garrincha077.github.io/StockScout-Unified`.
+Create a new Supabase project, apply `supabase/migrations`, and deploy `unified-operations` with JWT verification disabled at the platform gateway—the function verifies GitHub OIDC itself and accepts market data only from the compile-time allowlisted Unified Pages origin.
 
 In Auth:
 
@@ -30,6 +32,8 @@ In Auth:
 5. expose only the `stockscout_unified_api` schema to the Data API.
 
 The browser receives only the publishable key. Every owner table uses `auth.uid()`, an explicit allowlist, RLS, explicit grants, and mode/price-basis columns.
+
+Run `npx --yes supabase@2.116.0 test db` against a started local Supabase stack before applying a changed migration. The pgTAP suite proves anonymous denial, owner access, non-owner denial, and the expected schema/table grants.
 
 ## ChatGPT MCP
 

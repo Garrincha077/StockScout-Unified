@@ -32,7 +32,7 @@ MODE_SPECS: dict[ModeId, ModeSpec] = {
         id="next",
         label="Next",
         price_basis="split_div",
-        source_commit="a878b671e93617f3331604a8ea4eea592fddc6e4",
+        source_commit="528386109c5991ab8443ece446f85a48cc1e9c53",
         ranking="stockscreener-next-canonical-order",
     ),
     "ryan-original": ModeSpec(

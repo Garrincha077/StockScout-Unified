@@ -1,0 +1,38 @@
+name: Reusable Pages Deploy and Smoke
+
+on:
+  workflow_call:
+    inputs:
+      run_id:
+        description: Exact immutable Unified run expected after deployment
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Atomically deploy verified Pages artifact
+        id: deploy
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+
+  smoke:
+    needs: deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Verify exact remote run and every mode hash
+        env:
+          EXPECTED_RUN: ${{ inputs.run_id }}
+        run: python scripts/verify_remote_activation.py --run-id "$EXPECTED_RUN"

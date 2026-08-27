@@ -2,8 +2,9 @@ const SCHEMA = "stockscout_unified_api";
 const EXPECTED_ISSUER = "https://token.actions.githubusercontent.com";
 const EXPECTED_AUDIENCE = "stockscout-unified-operations";
 const EXPECTED_REPOSITORY = "Garrincha077/StockScout-Unified";
-const EXPECTED_REF = "refs/heads/codex/unified-app";
+const EXPECTED_REF = "refs/heads/main";
 const EXPECTED_WORKFLOW = `${EXPECTED_REPOSITORY}/.github/workflows/eod.yml@${EXPECTED_REF}`;
+const UNIFIED_PAGES_BASE_URL = "https://garrincha077.github.io/StockScout-Unified";
 const MODE_IDS = ["bottom-fishing", "next", "ryan-original"] as const;
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -27,9 +28,13 @@ function response(status: number, body: Json): Response {
   });
 }
 
-function bytes(value: string): Uint8Array {
+function bytes(value: string): ArrayBuffer {
   const padded = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
-  return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+  const decoded = atob(padded);
+  const buffer = new ArrayBuffer(decoded.length);
+  const view = new Uint8Array(buffer);
+  for (let index = 0; index < decoded.length; index += 1) view[index] = decoded.charCodeAt(index);
+  return buffer;
 }
 
 function decodePart<T>(value: string): T {
@@ -281,7 +286,7 @@ async function sha256(value: string): Promise<string> {
 
 async function evaluateAlerts(body: Record<string, unknown>): Promise<Json> {
   const expectedRun = text(body.runId, "runId", 160);
-  const pages = env("UNIFIED_PAGES_BASE_URL").replace(/\/$/, "");
+  const pages = UNIFIED_PAGES_BASE_URL;
   const root = await fetch(`${pages}/data/manifest.json`, { cache: "no-store" }).then((result) => result.json()) as Record<string, unknown>;
   if (root.runId !== expectedRun || root.status !== "healthy") throw new Error("deployed Pages run does not match alert request");
   const user = await ownerId();

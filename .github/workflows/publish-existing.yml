@@ -37,7 +37,7 @@ jobs:
       run_id: ${{ steps.identity.outputs.run_id }}
     steps:
       - name: Check out Unified application
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Read immutable reuse identity
         id: identity
@@ -66,7 +66,7 @@ jobs:
           PY
 
       - name: Check out exact existing Next and Ryan result
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Garrincha077/StockScreener-next
           ref: ${{ steps.identity.outputs.next_snapshot_commit }}
@@ -78,7 +78,7 @@ jobs:
             frontend/public/data/manifest.json
             frontend/public/data/charts
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
           cache: pip
@@ -113,9 +113,9 @@ jobs:
         env:
           SESSION_DATE: ${{ inputs.session_date }}
           RUN_ID: ${{ steps.identity.outputs.run_id }}
+          NEXT_SOURCE_COMMIT: ${{ steps.identity.outputs.next_source_commit }}
           RAW_SHA256: ${{ steps.identity.outputs.raw_sha256 }}
           CHARTS_SHA256: ${{ steps.identity.outputs.charts_sha256 }}
-          NEXT_SOURCE_COMMIT: ${{ steps.identity.outputs.next_source_commit }}
           NEXT_CANONICAL_SHA256: ${{ steps.identity.outputs.next_canonical_sha256 }}
         run: |
           echo "$RAW_SHA256  .staging/reuse/bottom.json" | sha256sum --check --strict
@@ -179,19 +179,24 @@ jobs:
         env:
           SESSION_DATE: ${{ inputs.session_date }}
           RUN_ID: ${{ steps.identity.outputs.run_id }}
+          NEXT_SOURCE_COMMIT: ${{ steps.identity.outputs.next_source_commit }}
         run: |
           python -m stockscout_unified.cli publish-bottom \
             --raw-scan .staging/reuse/bottom.json \
             --public-dir frontend/public \
             --chart-manifest ".staging/reuse/bottom-charts/$RUN_ID/manifest.json" \
             --chart-staging-dir .staging/reuse/bottom-charts
+          python scripts/build_next_contexts.py --output-dir .staging/next-context
           python -m stockscout_unified.cli publish-adjusted \
             --mode next \
             --canonical .sources/next/frontend/public/data/latest.json \
             --chart-dir .sources/next/frontend/public/data/charts \
             --public-dir frontend/public \
             --run-id "$RUN_ID" \
-            --session-date "$SESSION_DATE"
+            --session-date "$SESSION_DATE" \
+            --source-commit "$NEXT_SOURCE_COMMIT" \
+            --factor-regime .staging/next-context/factor-regime.json \
+            --gmli-context .staging/next-context/gmli-context.json
           python -m stockscout_unified.cli publish-adjusted \
             --mode ryan-original \
             --canonical .sources/next/frontend/public/data/latest.json \
@@ -212,7 +217,7 @@ jobs:
             --public-dir frontend/public \
             --bottom-raw-scan .staging/reuse/bottom.json
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
           cache: npm
@@ -221,6 +226,9 @@ jobs:
             services/mcp/package-lock.json
 
       - name: Test and build PWA and MCP
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
         run: |
           npm ci --prefix frontend
           npm test --prefix frontend
@@ -229,36 +237,17 @@ jobs:
           npm test --prefix services/mcp
 
       - name: Upload verified Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: frontend/dist
           retention-days: 14
 
   deploy-pages:
     needs: build-existing
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
-    steps:
-      - name: Deploy the verified existing snapshot
-        id: deploy
-        uses: actions/deploy-pages@v4
-
-  verify-pages:
-    needs: [build-existing, deploy-pages]
-    runs-on: ubuntu-latest
+    uses: ./.github/workflows/deploy-pages.yml
+    with:
+      run_id: ${{ needs.build-existing.outputs.run_id }}
     permissions:
       contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Verify exact remote run and all mode hashes
-        env:
-          EXPECTED_RUN: ${{ needs.build-existing.outputs.run_id }}
-        run: python scripts/verify_remote_activation.py --run-id "$EXPECTED_RUN"
+      pages: write
+      id-token: write

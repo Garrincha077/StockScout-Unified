@@ -110,35 +110,35 @@ alter table stockscout_unified_api.unified_alert_events enable row level securit
 alter table stockscout_unified_api.unified_delivery_state enable row level security;
 
 create policy owner_allowlist_read_self on stockscout_unified_api.owner_allowlist
-for select to authenticated using ((select auth.uid()) = user_id);
+for select to authenticated using ((select auth.uid()) is not null and (select auth.uid()) = user_id);
 
 create policy owner_watchlist_self on stockscout_unified_api.unified_watchlist_items
 for all to authenticated
-using ((select auth.uid()) = user_id and exists (select 1 from stockscout_unified_api.owner_allowlist a where a.user_id = (select auth.uid())))
-with check ((select auth.uid()) = user_id and exists (select 1 from stockscout_unified_api.owner_allowlist a where a.user_id = (select auth.uid())));
+using ((select auth.uid()) is not null and (select auth.uid()) = user_id and exists (select 1 from stockscout_unified_api.owner_allowlist a where a.user_id = (select auth.uid())))
+with check ((select auth.uid()) is not null and (select auth.uid()) = user_id and exists (select 1 from stockscout_unified_api.owner_allowlist a where a.user_id = (select auth.uid())));
 
 create policy owner_saved_screens_self on stockscout_unified_api.unified_saved_screens
 for all to authenticated
-using ((select auth.uid()) = user_id and exists (select 1 from stockscout_unified_api.owner_allowlist a where a.user_id = (select auth.uid())))
-with check ((select auth.uid()) = user_id and exists (select 1 from stockscout_unified_api.owner_allowlist a where a.user_id = (select auth.uid())));
+using ((select auth.uid()) is not null and (select auth.uid()) = user_id and exists (select 1 from stockscout_unified_api.owner_allowlist a where a.user_id = (select auth.uid())))
+with check ((select auth.uid()) is not null and (select auth.uid()) = user_id and exists (select 1 from stockscout_unified_api.owner_allowlist a where a.user_id = (select auth.uid())));
 
 create policy owner_drawings_self on stockscout_unified_api.unified_drawings
 for all to authenticated
-using ((select auth.uid()) = user_id and exists (select 1 from stockscout_unified_api.owner_allowlist a where a.user_id = (select auth.uid())))
-with check ((select auth.uid()) = user_id and exists (select 1 from stockscout_unified_api.owner_allowlist a where a.user_id = (select auth.uid())));
+using ((select auth.uid()) is not null and (select auth.uid()) = user_id and exists (select 1 from stockscout_unified_api.owner_allowlist a where a.user_id = (select auth.uid())))
+with check ((select auth.uid()) is not null and (select auth.uid()) = user_id and exists (select 1 from stockscout_unified_api.owner_allowlist a where a.user_id = (select auth.uid())));
 
 create policy owner_alerts_self on stockscout_unified_api.unified_alerts
 for all to authenticated
-using ((select auth.uid()) = user_id and exists (select 1 from stockscout_unified_api.owner_allowlist a where a.user_id = (select auth.uid())))
-with check ((select auth.uid()) = user_id and exists (select 1 from stockscout_unified_api.owner_allowlist a where a.user_id = (select auth.uid())));
+using ((select auth.uid()) is not null and (select auth.uid()) = user_id and exists (select 1 from stockscout_unified_api.owner_allowlist a where a.user_id = (select auth.uid())))
+with check ((select auth.uid()) is not null and (select auth.uid()) = user_id and exists (select 1 from stockscout_unified_api.owner_allowlist a where a.user_id = (select auth.uid())));
 
 create policy owner_alert_events_read on stockscout_unified_api.unified_alert_events
 for select to authenticated
-using ((select auth.uid()) = user_id and exists (select 1 from stockscout_unified_api.owner_allowlist a where a.user_id = (select auth.uid())));
+using ((select auth.uid()) is not null and (select auth.uid()) = user_id and exists (select 1 from stockscout_unified_api.owner_allowlist a where a.user_id = (select auth.uid())));
 
 create policy owner_delivery_state_read on stockscout_unified_api.unified_delivery_state
 for select to authenticated
-using ((select auth.uid()) = user_id and exists (select 1 from stockscout_unified_api.owner_allowlist a where a.user_id = (select auth.uid())));
+using ((select auth.uid()) is not null and (select auth.uid()) = user_id and exists (select 1 from stockscout_unified_api.owner_allowlist a where a.user_id = (select auth.uid())));
 
 create function stockscout_unified_api.unified_set_watchlist_ticker(
   p_name text,
@@ -175,3 +175,17 @@ grant select,insert,update,delete on stockscout_unified_api.unified_alerts to au
 grant select on stockscout_unified_api.unified_alert_events to authenticated;
 grant select on stockscout_unified_api.unified_delivery_state to authenticated;
 grant execute on function stockscout_unified_api.unified_set_watchlist_ticker(text,text,text,text,boolean) to authenticated;
+
+-- The server-only Edge function uses the platform-injected service-role key.
+-- Keep its grants explicit and limited to the four tables it operates on.
+grant usage on schema stockscout_unified_api to service_role;
+grant select on stockscout_unified_api.owner_allowlist to service_role;
+grant select on stockscout_unified_api.unified_alerts to service_role;
+grant select,insert on stockscout_unified_api.unified_alert_events to service_role;
+grant select,insert,update on stockscout_unified_api.unified_delivery_state to service_role;
+grant usage,select on all sequences in schema stockscout_unified_api to service_role;
+
+-- New hosted projects do not automatically expose custom schemas. Unified uses
+-- only this explicitly granted and RLS-protected schema through PostgREST.
+alter role authenticator set pgrst.db_schemas = 'stockscout_unified_api';
+notify pgrst, 'reload config';

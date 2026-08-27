@@ -1,6 +1,10 @@
 name: StockScout Unified EOD
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/rollout-trigger"
   schedule:
     - cron: "30 21 * * 1-5"
   workflow_dispatch:
@@ -52,23 +56,35 @@ jobs:
       session_date: ${{ steps.guard.outputs.session_date }}
       run_id: ${{ steps.identity.outputs.run_id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: |
             requirements.lock
             requirements-dev.lock
-            engines/next/requirements.txt
+            engines/next/requirements.lock
 
       - name: Install pinned Python runtimes
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.lock -r requirements-dev.lock
-          python -m pip install -r engines/next/requirements.txt
+          python -m pip install --require-hashes -r engines/next/requirements.lock
           python -m pip install -e .
+
+      - name: Fail closed on partial or missing production owner configuration
+        shell: bash
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          UNIFIED_DELIVERY_ENDPOINT: ${{ vars.UNIFIED_DELIVERY_ENDPOINT }}
+          REQUIRE_OWNER: ${{ github.event_name == 'schedule' || inputs.notify }}
+        run: |
+          args=()
+          if [ "$REQUIRE_OWNER" = "true" ]; then args+=(--require); fi
+          python scripts/check_owner_config.py "${args[@]}"
 
       - name: Select one completed NYSE session
         id: guard
@@ -95,14 +111,14 @@ jobs:
           cd engines/next
           python verify_legacy_baseline.py
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         if: steps.guard.outputs.should_run == 'true'
         with:
           path: |
             data/cache
             engines/next/data/fundamentals_cache
             engines/next/data/git_storage
-          key: unified-market-${{ runner.os }}-${{ steps.guard.outputs.session_date }}-${{ hashFiles('requirements.lock', 'engines/next/requirements.txt') }}
+          key: unified-market-${{ runner.os }}-${{ steps.guard.outputs.session_date }}-${{ hashFiles('requirements.lock', 'engines/next/requirements.lock') }}
           restore-keys: |
             unified-market-${{ runner.os }}-
 
@@ -123,7 +139,7 @@ jobs:
 
       - name: Preserve resumable Bottom checkpoint before Next
         if: steps.guard.outputs.should_run == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: unified-bottom-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -156,21 +172,26 @@ jobs:
           python compute_daily_changes.py data/batch_results/previous_frontend.json frontend/public/data/latest.json
           python finalize_opportunity_v2.py
           python validate_canonical_dataset.py
+          python audit_group_leadership.py
           python audit_pipeline_models.py
           python audit_fundamental_evidence.py
           python verify_legacy_baseline.py
           python validate_frontend_charts.py frontend/public --strict --minimum-coverage 0.95
 
+      - name: Build verified read-only Next contexts
+        if: steps.guard.outputs.should_run == 'true'
+        run: python scripts/build_next_contexts.py --output-dir .staging/next-context
+
       - name: Publish isolated Next and Ryan mode assets
         if: steps.guard.outputs.should_run == 'true'
         run: |
-          python -m stockscout_unified.cli publish-adjusted --mode next --canonical engines/next/frontend/public/data/latest.json --chart-dir engines/next/frontend/public/data/charts --public-dir frontend/public --run-id "${{ steps.identity.outputs.run_id }}" --session-date "${{ steps.guard.outputs.session_date }}"
+          python -m stockscout_unified.cli publish-adjusted --mode next --canonical engines/next/frontend/public/data/latest.json --chart-dir engines/next/frontend/public/data/charts --public-dir frontend/public --run-id "${{ steps.identity.outputs.run_id }}" --session-date "${{ steps.guard.outputs.session_date }}" --factor-regime .staging/next-context/factor-regime.json --gmli-context .staging/next-context/gmli-context.json
           python -m stockscout_unified.cli publish-adjusted --mode ryan-original --canonical engines/next/frontend/public/data/latest.json --chart-dir engines/next/frontend/public/data/charts --public-dir frontend/public --run-id "${{ steps.identity.outputs.run_id }}" --session-date "${{ steps.guard.outputs.session_date }}"
           python -m stockscout_unified.cli activate --public-dir frontend/public --run-id "${{ steps.identity.outputs.run_id }}" --session-date "${{ steps.guard.outputs.session_date }}"
           python -m stockscout_unified.cli verify --public-dir frontend/public
           python -m stockscout_unified.cli notify --public-dir frontend/public --bottom-raw-scan .staging/bottom.json
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         if: steps.guard.outputs.should_run == 'true'
         with:
           node-version: "22"
@@ -179,10 +200,10 @@ jobs:
             frontend/package-lock.json
             services/mcp/package-lock.json
 
-      - uses: denoland/setup-deno@v2
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         if: steps.guard.outputs.should_run == 'true'
         with:
-          deno-version: v2.2.7
+          deno-version: v2.9.5
 
       - name: Test OIDC owner operations
         if: steps.guard.outputs.should_run == 'true'
@@ -202,7 +223,7 @@ jobs:
 
       - name: Upload private Telegram render input
         if: steps.guard.outputs.should_run == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: unified-notify-${{ github.run_id }}-${{ github.run_attempt }}
           path: .staging/bottom.json
@@ -212,14 +233,14 @@ jobs:
 
       - name: Upload Pages artifact only after all three modes pass
         if: steps.guard.outputs.should_run == 'true'
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: frontend/dist
           retention-days: 14
 
       - name: Upload failure diagnostics without runtime market data
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: unified-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -233,17 +254,13 @@ jobs:
   deploy-pages:
     needs: scan-build
     if: needs.scan-build.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
+    uses: ./.github/workflows/deploy-pages.yml
+    with:
+      run_id: ${{ needs.scan-build.outputs.run_id }}
     permissions:
+      contents: read
       pages: write
       id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
-    steps:
-      - name: Atomically deploy the verified artifact
-        id: deploy
-        uses: actions/deploy-pages@v4
 
   verify-notify:
     needs: [scan-build, deploy-pages]
@@ -255,26 +272,22 @@ jobs:
     environment:
       name: production
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - run: |
           python -m pip install -r requirements.lock
           python -m pip install -e .
-      - name: Verify the exact deployed run and all mode hashes
-        env:
-          EXPECTED_RUN: ${{ needs.scan-build.outputs.run_id }}
-        run: python scripts/verify_remote_activation.py --run-id "$EXPECTED_RUN"
       - name: Download verified scan artifact for Telegram
         if: ${{ github.event_name == 'schedule' || inputs.notify }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: github-pages
           path: .pages
       - name: Download private Bottom digest input
         if: ${{ github.event_name == 'schedule' || inputs.notify }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: unified-notify-${{ github.run_id }}-${{ github.run_attempt }}
           path: .notify

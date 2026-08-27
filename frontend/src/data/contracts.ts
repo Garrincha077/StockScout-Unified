@@ -35,6 +35,18 @@ export type AssetDescriptor={
   bucketCount?:number
 }
 
+export type NextGroupRowV1={
+  ticker:string;name:string;rank:number;rel1m:number;rel3m:number;rel6m:number
+  stocks:number;stage2Pct:number;earlyLeaders:number;medianOpportunity:number
+  avgConfidence?:number;topTickers:string[]
+}
+
+export type NextGroupsV1={
+  method:'behavioral-proxy-v2-confidence';description:string;confidenceMethod?:string
+  sectorCoverage:number;industryCoverage:number;averageConfidence?:number
+  maxLeadershipAdjustmentPoints?:number;sectors:NextGroupRowV1[];industries:NextGroupRowV1[]
+}
+
 export type ScanHealth='healthy'|'degraded'|'failed'
 
 export type ScanManifestV1={
@@ -62,6 +74,8 @@ export type ScanManifestV1={
     legacyIndex?:AssetDescriptor
     legacyDetails?:AssetDescriptor
     charts?:AssetDescriptor
+    factorRegime?:AssetDescriptor
+    gmliContext?:AssetDescriptor
   }
 }
 
@@ -120,6 +134,7 @@ export type CandidateCoreV1={
   universe:CandidateSummaryV1[]
   detailShards?:Record<string,string>
   chartShards?:Record<string,string>
+  groups?:NextGroupsV1
   [key:string]:any
 }
 
@@ -197,6 +212,8 @@ export function parseManifest(value:unknown):StockScoutManifest{
         details:requiredAsset(assets.details,'details'),
         excluded:requiredAsset(assets.excluded,'excluded'),
         history:requiredAsset(assets.history,'history'),
+        ...(assets.factorRegime?{factorRegime:requiredAsset(assets.factorRegime,'factorRegime')}:{ }),
+        ...(assets.gmliContext?{gmliContext:requiredAsset(assets.gmliContext,'gmliContext')}:{ }),
       },
     } as ScanManifestV1
   }

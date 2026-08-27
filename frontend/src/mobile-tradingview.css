@@ -4,7 +4,7 @@
   :root{--ss-mobile-nav-h:58px;--ss-mobile-top-h:48px}
   html{background:#050b14;overscroll-behavior-y:none}
   body{margin:0;background:#050b14;overscroll-behavior-y:contain;-webkit-tap-highlight-color:transparent}
-  button,input,select{touch-action:manipulation}
+  button,input,select{min-height:44px!important;touch-action:manipulation}
   .dv-app,.lg-app,.grp-app{padding-bottom:calc(var(--ss-mobile-nav-h) + env(safe-area-inset-bottom));min-height:100svh}
 
   /* Compact TradingView-like top bar. */

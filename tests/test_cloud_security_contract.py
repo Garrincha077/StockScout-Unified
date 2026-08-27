@@ -25,7 +25,7 @@ def test_owner_state_is_mode_and_price_basis_scoped() -> None:
     assert "price_basis in ('split_only','split_div')" in sql
 
 
-def test_browser_grants_are_explicit_and_anon_has_no_owner_access() -> None:
+def test_browser_and_edge_grants_are_explicit_and_least_privilege() -> None:
     sql = MIGRATION.read_text(encoding="utf-8").lower()
     assert "revoke all on schema stockscout_unified_api from public, anon, authenticated" in sql
     assert "revoke all on all tables in schema stockscout_unified_api from public, anon" in sql
@@ -34,7 +34,15 @@ def test_browser_grants_are_explicit_and_anon_has_no_owner_access() -> None:
     assert "grant select on stockscout_unified_api.unified_alert_events to authenticated" in sql
     assert "grant select on stockscout_unified_api.unified_delivery_state to authenticated" in sql
     assert "grant execute on function stockscout_unified_api.unified_set_watchlist_ticker" in sql
-    assert "service_role" not in sql
+    assert "grant usage on schema stockscout_unified_api to service_role" in sql
+    assert "grant select on stockscout_unified_api.owner_allowlist to service_role" in sql
+    assert "grant select on stockscout_unified_api.unified_alerts to service_role" in sql
+    assert "grant select,insert on stockscout_unified_api.unified_alert_events to service_role" in sql
+    assert (
+        "grant select,insert,update on "
+        "stockscout_unified_api.unified_delivery_state to service_role"
+    ) in sql
+    assert "grant all on all tables in schema stockscout_unified_api to service_role" not in sql
 
 
 def test_owner_policies_bind_rows_to_auth_uid_and_allowlist() -> None:
