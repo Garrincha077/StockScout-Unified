@@ -14,7 +14,7 @@ from stockscout_eod.runner import load_raw_scan
 
 from .contracts import UnifiedManifestV1
 from .notifications import build_series, deliver_series, evaluate_owner_alerts
-from .publisher import activate_unified, publish_adjusted_mode
+from .publisher import activate_unified, attach_bottom_screener_asset, publish_adjusted_mode
 from .reuse import prepare_bottom_reuse
 
 
@@ -177,6 +177,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             document_mode="bottom-fishing",
             data_subdir="data/modes/bottom-fishing",
             history_limit=20,
+        )
+        manifest = attach_bottom_screener_asset(
+            manifest=manifest,
+            public_dir=args.public_dir,
+            raw_scan=wire_dump(scan),
         )
         _copy_bottom_charts(
             public_dir=Path(args.public_dir),

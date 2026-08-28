@@ -1,3 +1,5 @@
+import{evaluateDrawingGeometry,rearmAfterClear,type GeometryAlertCondition,type GeometryAlertTarget,type GeometryDrawing,type GeometryEvaluation}from'../_shared/chartGeometry.ts';
+
 const SCHEMA = "stockscout_unified_api";
 const EXPECTED_ISSUER = "https://token.actions.githubusercontent.com";
 const EXPECTED_AUDIENCE = "stockscout-unified-operations";
@@ -17,6 +19,8 @@ export type AlertRow = {
   mode: (typeof MODE_IDS)[number];
   price_basis: string;
   payload: Record<string, unknown>;
+  drawing_id?: string | null;
+  updated_at?: string;
 };
 type PriceBar = { time: string; open: number; high: number; low: number; close: number };
 type ModeDocument = { manifest: Record<string, unknown>; core: Record<string, unknown>; rows: Map<string, Record<string, unknown>> };
@@ -208,15 +212,6 @@ async function loadBars(pages: string, mode: string, ticker: string, document: M
   return rows.map(priceBar).filter((bar): bar is PriceBar => bar !== null);
 }
 
-function lineAt(points: unknown[], atTime: string): number | null {
-  if (points.length < 2 || !points[0] || !points[1] || typeof points[0] !== "object" || typeof points[1] !== "object") return null;
-  const first = points[0] as Record<string, unknown>, second = points[1] as Record<string, unknown>;
-  const p1 = Number(first.price), p2 = Number(second.price), t1 = Date.parse(String(first.time)), t2 = Date.parse(String(second.time)), at = Date.parse(atTime);
-  if (![p1, p2, t1, t2, at].every(Number.isFinite)) return null;
-  if (t1 === t2) return p1;
-  return p1 + (p2 - p1) * ((at - t1) / (t2 - t1));
-}
-
 function levelTriggered(operator: string, level: number, bars: PriceBar[]): boolean {
   if (!bars.length || !Number.isFinite(level)) return false;
   const last = bars.at(-1)!, previous = bars.at(-2) ?? last;
@@ -227,35 +222,50 @@ function levelTriggered(operator: string, level: number, bars: PriceBar[]): bool
   return operator === "crossing_down" ? previous.close >= level && last.close < level : previous.close <= level && last.close > level;
 }
 
+function geometryDrawing(value:Record<string,unknown>):GeometryDrawing|null{
+  const points=Array.isArray(value.points)?value.points.flatMap(point=>{
+    if(!point||typeof point!=="object"||Array.isArray(point))return[];
+    const row=point as Record<string,unknown>,time=String(row.time??""),price=Number(row.price);
+    return /^\d{4}-\d{2}-\d{2}$/.test(time)&&Number.isFinite(price)?[{time,price}]:[];
+  }):[];
+  const type=String(value.type??"trendline") as GeometryDrawing["type"];
+  if(points.length<2||!["trendline","ray","horizontal","vertical","rectangle","channel","fib","text","measure"].includes(type))return null;
+  return{type,points,extend:(value.extend??(type==="ray"?"right":["trendline","horizontal","channel"].includes(type)?"both":"none"))as GeometryDrawing["extend"],fibLevels:Array.isArray(value.fibLevels)?value.fibLevels.map(Number).filter(Number.isFinite):undefined};
+}
+
+function drawingEvaluation(payload:Record<string,unknown>,drawingValue:Record<string,unknown>,bars:PriceBar[]):GeometryEvaluation{
+  const drawing=geometryDrawing(drawingValue);
+  if(!drawing)return{condition:false,relation:"invalid",previousPrice:null,currentPrice:null,previousLevel:null,currentLevel:null};
+  const rawCondition=String(payload.condition??payload.operator??"touch").replace("breaking_up","break_up").replace("breaking_down","break_down");
+  const condition=(rawCondition==="crossing"?"crossing_up":rawCondition==="inside"?"entering":rawCondition==="outside"?"exiting":rawCondition)as GeometryAlertCondition;
+  const explicit=payload.target&&typeof payload.target==="object"&&!Array.isArray(payload.target)?payload.target as GeometryAlertTarget:null;
+  if(explicit)return evaluateDrawingGeometry(drawing,explicit,condition,bars);
+  if(drawing.type==="rectangle")return evaluateDrawingGeometry(drawing,{kind:"zone"},condition,bars);
+  if(drawing.type==="channel"&&["entering","exiting"].includes(condition))return evaluateDrawingGeometry(drawing,{kind:"zone"},condition,bars);
+  if(drawing.type==="fib"){
+    const levels=drawing.fibLevels??[0,.236,.382,.5,.618,.786,1];
+    for(const level of levels){const result=evaluateDrawingGeometry(drawing,{kind:"fib-level",level},condition,bars);if(result.condition)return result}
+    return evaluateDrawingGeometry(drawing,{kind:"fib-level",level:levels[0]??0},condition,bars);
+  }
+  if(rawCondition==="crossing"){
+    const up=evaluateDrawingGeometry(drawing,{kind:"line"},"crossing_up",bars);
+    return up.condition?up:evaluateDrawingGeometry(drawing,{kind:"line"},"crossing_down",bars);
+  }
+  return evaluateDrawingGeometry(drawing,{kind:"line"},condition,bars);
+}
+
 export function drawingTriggered(payload: Record<string, unknown>, bars: PriceBar[]): boolean {
   if (!bars.length) return false;
   const drawing = payload.drawing && typeof payload.drawing === "object" && !Array.isArray(payload.drawing) ? payload.drawing as Record<string, unknown> : payload;
-  const points = Array.isArray(drawing.points) ? drawing.points : [];
-  if (points.length < 2) return false;
-  const type = String(drawing.type ?? "trendline"), operator = String(payload.operator ?? payload.mode ?? "touch").replace("break_up", "crossing_up").replace("break_down", "crossing_down");
-  const last = bars.at(-1)!, previous = bars.at(-2) ?? last;
-  if (["rectangle", "channel"].includes(type) && ["entering", "exiting", "inside", "outside"].includes(operator)) {
-    const first = points[0] as Record<string, unknown>, second = points[1] as Record<string, unknown>;
-    const low = Math.min(Number(first.price), Number(second.price)), high = Math.max(Number(first.price), Number(second.price));
-    if (![low, high].every(Number.isFinite)) return false;
-    const inside = low <= last.close && last.close <= high, before = low <= previous.close && previous.close <= high;
-    return operator === "inside" ? inside : operator === "outside" ? !inside : operator === "entering" ? inside && !before : before && !inside;
-  }
-  if (type === "fib") {
-    const first = Number((points[0] as Record<string, unknown>).price), second = Number((points[1] as Record<string, unknown>).price);
-    const levels = Array.isArray(drawing.fibLevels) ? drawing.fibLevels : [0, .236, .382, .5, .618, .786, 1];
-    return Number.isFinite(first) && Number.isFinite(second) && levels.some((level) => levelTriggered(operator, first + (second - first) * Number(level), bars));
-  }
-  const level = lineAt(points, last.time);
-  return level !== null && levelTriggered(operator, level, bars);
+  return drawingEvaluation(payload,drawing,bars).condition;
 }
 
 export function triggered(alert: AlertRow, candidate: Record<string, unknown> | undefined, bars: PriceBar[]): boolean {
-  if (!candidate) return false;
   const payload = alert.payload ?? {};
   const kind = String(payload.kind ?? "price");
   if (kind === "watchlist") return true;
   if (kind === "screen") {
+    if(!candidate)return false;
     const filters = Array.isArray(payload.filters) ? payload.filters.slice(0, 12) : [];
     return filters.length > 0 && filters.every((filter) => {
       if (!filter || typeof filter !== "object") return false;
@@ -267,8 +277,8 @@ export function triggered(alert: AlertRow, candidate: Record<string, unknown> | 
   const points = Array.isArray(payload.points) ? payload.points : [];
   const firstPoint = points[0] && typeof points[0] === "object" ? points[0] as Record<string, unknown> : {};
   const target = Number(payload.price ?? firstPoint.price);
-  const current = bars.at(-1)?.close ?? Number(candidate.price ?? candidate.close);
-  const previous = bars.at(-2)?.close ?? Number(candidate.previousClose ?? candidate.prevClose ?? candidate.closePrev);
+  const current = bars.at(-1)?.close ?? Number(candidate?.price ?? candidate?.close);
+  const previous = bars.at(-2)?.close ?? Number(candidate?.previousClose ?? candidate?.prevClose ?? candidate?.closePrev);
   if (!Number.isFinite(target) || !Number.isFinite(current)) return false;
   const operator = String(payload.operator ?? "crossing_up");
   if (operator === "above" || operator === "greater_than") return current > target;
@@ -290,7 +300,11 @@ async function evaluateAlerts(body: Record<string, unknown>): Promise<Json> {
   const root = await fetch(`${pages}/data/manifest.json`, { cache: "no-store" }).then((result) => result.json()) as Record<string, unknown>;
   if (root.runId !== expectedRun || root.status !== "healthy") throw new Error("deployed Pages run does not match alert request");
   const user = await ownerId();
-  const alerts = await database(`unified_alerts?select=id,user_id,name,ticker,mode,price_basis,payload&user_id=eq.${user}&enabled=eq.true`) as AlertRow[];
+  const alerts = await database(`unified_alerts?select=id,user_id,name,ticker,mode,price_basis,payload,drawing_id,updated_at&user_id=eq.${user}&enabled=eq.true`) as AlertRow[];
+  const drawingRows = await database(`unified_drawings?select=id,user_id,ticker,mode,price_basis,payload,updated_at&user_id=eq.${user}`) as Array<Record<string,unknown>>;
+  const drawings = new Map(drawingRows.map(row=>[String(row.id),row]));
+  const stateRows = await database(`unified_alert_state?select=alert_id,config_version,armed,last_condition&user_id=eq.${user}`) as Array<Record<string,unknown>>;
+  const stateByAlert = new Map(stateRows.map(row=>[String(row.alert_id),row]));
   const modeDocuments = new Map<string, ModeDocument>();
   for (const mode of MODE_IDS) {
     const modeManifest = await fetch(`${pages}/data/modes/${mode}/manifest.json`, { cache: "no-store" }).then((result) => result.json()) as Record<string, unknown>;
@@ -301,6 +315,7 @@ async function evaluateAlerts(body: Record<string, unknown>): Promise<Json> {
     modeDocuments.set(mode, { manifest: modeManifest, core, rows: new Map(rows.map((row) => [String(row.ticker).toUpperCase(), row])) });
   }
   const events: Record<string, Json>[] = [];
+  const nextStates: Record<string, Json>[] = [];
   const barCache = new Map<string, Promise<PriceBar[]>>();
   for (const alert of alerts) {
     const document = modeDocuments.get(alert.mode);
@@ -313,7 +328,33 @@ async function evaluateAlerts(body: Record<string, unknown>): Promise<Json> {
       const cacheKey = `${alert.mode}:${normalized}`;
       if (needsBars && !barCache.has(cacheKey)) barCache.set(cacheKey, loadBars(pages, alert.mode, normalized, document));
       const bars = needsBars ? await barCache.get(cacheKey)! : [];
-      if (!triggered(alert, candidate, bars)) continue;
+      let didTrigger=false,context:Record<string,Json>={ticker:normalized,name:alert.name,price:bars.at(-1)?.close??Number(candidate?.price??candidate?.close??0),mode:alert.mode};
+      const linked=String(alert.payload.kind??"price")==="drawing"&&alert.payload.version===2;
+      if(linked){
+        const drawing=alert.drawing_id?drawings.get(alert.drawing_id):undefined;
+        const configurationVersion=[String(alert.updated_at??""),String(drawing?.updated_at??"")].sort().at(-1)??new Date(0).toISOString();
+        const existing=stateByAlert.get(alert.id),stateMatches=String(existing?.config_version??"")===configurationVersion;
+        if(!drawing||String(drawing.ticker)!==normalized||drawing.mode!==alert.mode||drawing.price_basis!==alert.price_basis){
+          nextStates.push({alert_id:alert.id,user_id:user,config_version:configurationVersion,armed:true,last_condition:false,last_run_id:expectedRun,last_session_date:bars.at(-1)?.time??null,evaluated_at:new Date().toISOString(),error:"Linked drawing is missing or outside the alert scope."});
+          continue;
+        }
+        const geometry=drawing.payload&&typeof drawing.payload==="object"&&!Array.isArray(drawing.payload)?drawing.payload as Record<string,unknown>:{};
+        const evaluation=drawingEvaluation(alert.payload,geometry,bars),armed=stateMatches?Boolean(existing?.armed):true;
+        const transition=rearmAfterClear(armed,evaluation.condition);didTrigger=transition.triggered;
+        nextStates.push({
+          alert_id:alert.id,user_id:user,config_version:configurationVersion,armed:transition.armed,last_condition:evaluation.condition,
+          last_relation:evaluation.relation,last_run_id:expectedRun,last_session_date:bars.at(-1)?.time??null,
+          previous_price:evaluation.previousPrice,current_price:evaluation.currentPrice,previous_level:evaluation.previousLevel,current_level:evaluation.currentLevel,
+          evaluated_at:new Date().toISOString(),error:evaluation.relation==="invalid"?"Drawing geometry could not be evaluated.":null,
+        });
+        context={
+          ...context,drawingId:String(drawing.id),drawingType:String(geometry.type??"drawing"),condition:String(alert.payload.condition??"touch"),
+          target:alert.payload.target as Json,previousPrice:evaluation.previousPrice,currentPrice:evaluation.currentPrice,
+          previousLevel:evaluation.previousLevel,currentLevel:evaluation.currentLevel,sessionDate:bars.at(-1)?.time??"",
+          deepLink:`${pages}/?mode=${encodeURIComponent(alert.mode)}&view=screener&ticker=${encodeURIComponent(normalized)}&drawing=${encodeURIComponent(String(drawing.id))}`,
+        };
+      }else didTrigger=triggered(alert,candidate,bars);
+      if (!didTrigger) continue;
       const eventKey = await sha256(`${expectedRun}|${alert.id}|${ticker.toUpperCase()}`);
       events.push({
         user_id: user,
@@ -322,10 +363,11 @@ async function evaluateAlerts(body: Record<string, unknown>): Promise<Json> {
         mode: alert.mode,
         price_basis: alert.price_basis,
         event_key: eventKey,
-        payload: { ticker: normalized, name: alert.name, price: bars.at(-1)?.close ?? Number(candidate?.price ?? candidate?.close ?? 0), mode: alert.mode },
+        payload: context,
       });
     }
   }
+  if(nextStates.length)await database("unified_alert_state?on_conflict=alert_id,user_id",{method:"POST",body:JSON.stringify(nextStates)});
   if (events.length) await database("unified_alert_events?on_conflict=user_id,event_key", { method: "POST", headers: { prefer: "return=representation,resolution=ignore-duplicates" }, body: JSON.stringify(events) });
   return { runId: expectedRun, events: events.map((event) => event.payload as Json) };
 }

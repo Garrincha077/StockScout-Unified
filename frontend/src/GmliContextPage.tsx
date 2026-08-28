@@ -29,9 +29,9 @@ function Extreme({label,value,z,percentile}:{label:string;value:string;z:number;
 }
 
 export default function GmliContextPage(){
-  const{loadContextAsset}=useStockScoutData()
+  const{loadContextAsset,manifest,loading:appLoading}=useStockScoutData()
   const[payload,setPayload]=useState<GmliPayload|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true),[retry,setRetry]=useState(0)
-  useEffect(()=>{let live=true;setLoading(true);setError('');loadContextAsset<GmliPayload>('gmliContext',retry>0).then(value=>{if(live)setPayload(value)}).catch(reason=>{if(live)setError(reason instanceof Error?reason.message:String(reason))}).finally(()=>{if(live)setLoading(false)});return()=>{live=false}},[loadContextAsset,retry])
+  useEffect(()=>{if(appLoading||!manifest)return;let live=true;setLoading(true);setError('');loadContextAsset<GmliPayload>('gmliContext',retry>0).then(value=>{if(live)setPayload(value)}).catch(reason=>{if(live)setError(reason instanceof Error?reason.message:String(reason))}).finally(()=>{if(live)setLoading(false)});return()=>{live=false}},[loadContextAsset,manifest,appLoading,retry])
   const assets=useMemo(()=>Object.entries(payload?.regime.market.assetsPositive??{}).map(([name,positive])=>`${name} ${positive?'✓':'×'}`).join(' · '),[payload])
   if(loading&&!payload)return <div className="ctx-state ctx-loading"><b>Loading GMLI context…</b><span>Validating its read-only consumer contract.</span></div>
   if(error&&!payload)return <div className="ctx-state ctx-error" role="alert"><b>GMLI unavailable</b><span>{error}</span><button onClick={()=>setRetry(value=>value+1)}>Retry</button></div>
@@ -49,6 +49,6 @@ export default function GmliContextPage(){
       <article className="ctx-card"><small>MARKET CONFIRMATION</small><div className="ctx-primary"><strong>{r.market.positive??'—'}/{r.market.total??'—'}</strong><span>{r.market.month} · {assets||'—'}</span></div><MiniTrend rows={payload.history.market} field="positive" max={4}/></article>
     </section>
     <section className="ctx-extremes"><Extreme label="USD LEVEL" value={`${fmt(x.usd_level.value_pct,2)}% YoY`} z={x.usd_level.z} percentile={x.usd_level.percentile}/><Extreme label="FX-NEUTRAL LEVEL" value={`${fmt(x.fx_neutral_level.value_pct,2)}% YoY`} z={x.fx_neutral_level.z} percentile={x.fx_neutral_level.percentile}/><Extreme label="USD ACCEL3" value={`${signed(x.usd_accel3.value_pp)} pp`} z={x.usd_accel3.z} percentile={x.usd_accel3.percentile}/><Extreme label="FX-NEUTRAL ACCEL3" value={`${signed(x.fx_neutral_accel3.value_pp)} pp`} z={x.fx_neutral_accel3.z} percentile={x.fx_neutral_accel3.percentile}/></section>
-    <section className="ctx-contract"><div><small>Source</small><b>{payload.source.repository}</b></div><div><small>Consumer contract</small><b>Read-only sidecar</b></div><div><small>StockScout impact</small><b>None · context only</b></div></section>
+    <section className="ctx-contract"><div><small>Source</small><b>{payload.source.repository}</b></div><div><small>Build / fallback</small><b>{payload.generatedAt?new Date(payload.generatedAt).toLocaleString():'—'} · {payload.source.upstreamRefreshStatus}</b></div><div><small>Consumer contract</small><b>Read-only sidecar</b></div><div><small>StockScout impact</small><b>None · context only</b></div></section>
   </main>
 }

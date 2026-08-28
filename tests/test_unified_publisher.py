@@ -15,7 +15,11 @@ from stockscout_eod.contracts import (
 )
 from stockscout_eod.jsonio import canonical_json_bytes, sha256_bytes
 from stockscout_unified.cli import verify
-from stockscout_unified.publisher import activate_unified, publish_adjusted_mode
+from stockscout_unified.publisher import (
+    activate_unified,
+    attach_bottom_screener_asset,
+    publish_adjusted_mode,
+)
 
 RUN_ID = "2026-08-24-eod-test"
 SESSION = "2026-08-24"
@@ -186,6 +190,45 @@ def test_activation_rejects_cross_mode_price_basis(tmp_path: Path) -> None:
         assert "bottom-fishing" in str(exc) or "next" in str(exc)
     else:
         raise AssertionError("activation accepted an invalid Bottom Fishing price basis")
+
+
+def test_bottom_screener_sidecar_keeps_rich_fields_without_changing_ranking(tmp_path: Path) -> None:
+    public = tmp_path / "public"
+    write_bottom(public)
+    manifest_path = public / "data" / "modes" / "bottom-fishing" / "manifest.json"
+    manifest = ScanManifestV1.model_validate_json(manifest_path.read_bytes())
+    candidate = {
+        "ticker": "BOT",
+        "score": 88.0,
+        "price": 99.0,
+        "atr20": 2.0,
+        "trade_plan": {
+            "status": "trigger_pending",
+            "trigger_state": "pending",
+            "trigger_reference_level": 100.0,
+            "entry_risk_pct": 6.0,
+            "extension_atr": None,
+        },
+        **{f"sourceField{index}": index for index in range(65)},
+    }
+
+    updated = attach_bottom_screener_asset(
+        manifest=manifest,
+        public_dir=public,
+        raw_scan={"candidates": [candidate]},
+    )
+
+    assert "bottomScreener" in updated.assets
+    assert updated.versions["ranking"] == manifest.versions["ranking"]
+    asset = updated.assets["bottomScreener"]
+    payload = json.loads((manifest_path.parent / asset.path).read_text(encoding="utf-8"))
+    assert payload["schemaVersion"] == "stockscout-unified/bottom-screener-v1"
+    assert payload["priceBasis"] == "split_only"
+    assert len(payload["fields"]) >= 60
+    assert payload["rows"][0]["score"] == 88.0
+    assert payload["rows"][0]["trade_status"] == "trigger_pending"
+    assert payload["rows"][0]["distance_to_trigger_pct"] == -1.0
+    assert payload["rows"][0]["distance_to_trigger_atr"] == -0.5
 
 
 def test_verify_accepts_bottom_manifest_backed_gzip_chart_shards(tmp_path: Path) -> None:

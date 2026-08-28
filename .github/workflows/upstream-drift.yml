@@ -27,6 +27,26 @@ jobs:
             echo "Upstream main: \`$upstream\`"
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "$pinned" != "$upstream" ]; then
-            echo "Upstream changed. Review and selectively port it; no files were updated." >> "$GITHUB_STEP_SUMMARY"
-            exit 1
+            files=$(gh api "repos/Garrincha077/StockScreener-next/compare/$pinned...$upstream" --jq '.files[].filename')
+            printf '%s\n' "$files" >> "$RUNNER_TEMP/next-drift-files.txt"
+            classification=$(python - "$RUNNER_TEMP/next-drift-files.txt" <<'PY'
+          import sys
+          from pathlib import Path
+
+          files = [line.strip() for line in Path(sys.argv[1]).read_text().splitlines() if line.strip()]
+          data_prefixes = ("data/", "frontend/public/data/", "reports/generated/")
+          data_suffixes = (".csv", ".jsonl", ".parquet", ".feather")
+          code = [path for path in files if not path.startswith(data_prefixes) and not path.endswith(data_suffixes)]
+          print("code" if code else "data-only")
+          if code:
+              print("\n".join(code[:30]), file=sys.stderr)
+          PY
+            )
+            echo "Classification: **$classification**" >> "$GITHUB_STEP_SUMMARY"
+            if [ "$classification" = "data-only" ]; then
+              echo "Only generated/data paths changed. The reviewed code pin remains valid; no files were updated." >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "Code/config/schema/workflow drift requires selective review; no files were updated." >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
           fi

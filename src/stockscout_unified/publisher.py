@@ -169,7 +169,61 @@ def _summary(row: Mapping[str, Any]) -> dict[str, Any]:
         value = row.get(key)
         if isinstance(value, Mapping):
             result[key] = _safe_detail(value)
+    plan = row.get("trade_plan") or row.get("tradePlan")
+    if isinstance(plan, Mapping):
+        projections = {
+            "trade_status": plan.get("status"),
+            "trigger_state": plan.get("trigger_state") or plan.get("triggerState"),
+            "entry_risk_pct": plan.get("entry_risk_pct") or plan.get("entryRiskPct"),
+            "extension_atr": plan.get("extension_atr") or plan.get("extensionAtr"),
+        }
+        result.update({key: value for key, value in projections.items() if value is not None})
+        price = _number(row.get("price"), float("nan"))
+        trigger = _number(
+            plan.get("trigger_reference_level") or plan.get("triggerReferenceLevel"),
+            float("nan"),
+        )
+        atr = _number(row.get("atr20"), float("nan"))
+        if price == price and trigger == trigger and trigger > 0:
+            result["distance_to_trigger_pct"] = round((price - trigger) / trigger * 100.0, 4)
+            if atr == atr and atr > 0:
+                result["distance_to_trigger_atr"] = round((price - trigger) / atr, 4)
     return result
+
+
+def attach_bottom_screener_asset(
+    *,
+    manifest: ScanManifestV1,
+    public_dir: str | Path,
+    raw_scan: Mapping[str, Any],
+) -> ScanManifestV1:
+    """Attach a lazy, hash-verified Bottom field registry without changing ranking."""
+    if manifest.mode != "bottom-fishing":
+        raise ValueError("bottomScreener is reserved for Bottom Fishing")
+    candidates = [row for row in raw_scan.get("candidates") or [] if isinstance(row, Mapping)]
+    if len(candidates) != manifest.counts.candidates:
+        raise ValueError("bottomScreener candidate count does not match the published Bottom manifest")
+    rows = [_summary(row) for row in candidates]
+    fields = sorted({str(key) for row in rows for key in row})
+    if len(fields) < 60:
+        raise ValueError(f"bottomScreener exposes only {len(fields)} scalar fields; expected at least 60")
+    payload = {
+        "schemaVersion": "stockscout-unified/bottom-screener-v1",
+        "runId": manifest.run_id,
+        "sessionDate": manifest.session_date,
+        "priceBasis": "split_only",
+        "ranking": manifest.versions.get("ranking"),
+        "fields": fields,
+        "rows": rows,
+    }
+    mode_root = Path(public_dir).resolve() / "data" / "modes" / "bottom-fishing"
+    relative = f"runs/{manifest.run_id}/bottom-screener.json"
+    encoded = write_json(mode_root / relative, payload)
+    assets = {**manifest.assets, "bottomScreener": _descriptor(relative, encoded, len(rows))}
+    updated = manifest.model_copy(update={"assets": assets})
+    assert_public_safe(wire_dump(updated))
+    atomic_write_json(mode_root / "manifest.json", wire_dump(updated))
+    return updated
 
 
 def _ryan_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

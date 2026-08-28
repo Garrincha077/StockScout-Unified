@@ -7,6 +7,11 @@ on:
         description: "Verified existing session to publish"
         required: true
         type: string
+      run_id:
+        description: "Exact immutable existing run ID (must match the reuse registry)"
+        required: false
+        default: ""
+        type: string
       notify:
         description: "Render the private Telegram dry run after publication"
         required: false
@@ -21,6 +26,11 @@ on:
         options:
           - "2026-08-25"
         default: "2026-08-25"
+      run_id:
+        description: "Exact immutable run ID; this workflow never scans"
+        required: true
+        type: string
+        default: "2026-08-25-reuse-1"
       notify:
         description: "Render the private Telegram dry run after publication"
         required: false
@@ -44,6 +54,7 @@ jobs:
         shell: bash
         env:
           SESSION_DATE: ${{ inputs.session_date }}
+          REQUESTED_RUN_ID: ${{ inputs.run_id }}
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
@@ -54,6 +65,9 @@ jobs:
           source = json.loads(Path(f"config/reuse_snapshots/{session}.json").read_text())
           if source["sessionDate"] != session:
               raise SystemExit("reuse session identity mismatch")
+          requested_run = os.environ.get("REQUESTED_RUN_ID", "").strip()
+          if requested_run and source["runId"] != requested_run:
+              raise SystemExit(f"requested run {requested_run} is not the registered immutable run {source['runId']}")
           print(f"run_id={source['runId']}")
           print(f"release_tag={source['releaseTag']}")
           print(f"asset_name={source['assetName']}")
@@ -77,7 +91,19 @@ jobs:
           print(f"next_pages_asset_name={release_asset['name']}")
           print(f"next_pages_asset_sha256={release_asset['sha256']}")
           print(f"next_pages_asset_bytes={release_asset['bytes']}")
+          print("scan_invoked=false")
           PY
+
+      - name: Record frontend-only deployment contract
+        shell: bash
+        run: |
+          {
+            echo "## Frontend-only immutable deployment"
+            echo ""
+            echo "Run: \`${{ steps.identity.outputs.run_id }}\`"
+            echo "Session: \`${{ inputs.session_date }}\`"
+            echo "Scan invoked: **false**"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check out exact existing Next and Ryan result
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

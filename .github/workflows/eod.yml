@@ -39,6 +39,7 @@ jobs:
     uses: ./.github/workflows/publish-existing.yml
     with:
       session_date: ${{ inputs.scan_date }}
+      run_id: ""
       notify: ${{ inputs.notify }}
     permissions:
       contents: read

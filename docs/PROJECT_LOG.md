@@ -121,3 +121,33 @@
   `publish-existing` to verify the release asset, embedded manifest, source commit,
   workflow run, chart aggregate, and byte count before publishing. This keeps CI
   independent of cross-repository artifact permissions and avoids a new market scan.
+
+## 2026-08-28 — Drawing-first alerts and full Bottom surfaces
+
+- Replaced interval-local drawing snapshots with UTC-anchored drawing payload v2.
+  New drawings are shared across Daily and Weekly, and the SVG renderer and Edge
+  evaluator now use the same geometry module for lines, rays, channels, zones and
+  Fibonacci levels. Existing v1 drawings remain readable without a forced rewrite.
+- Made drawing alerts reference their drawing row instead of copying geometry. Added
+  armed/rearm runtime state, alert badges and inspector states, edit resets, linked
+  Telegram context/deep links, and owner-safe composite foreign keys with cascade.
+- Consolidated all three modes on one persistent chart engine with OHLCV crosshair,
+  preserved viewport, retry/fullscreen/freshness context and mode-specific owner tools.
+  Ryan Original is read-only and routes drawing work to the same ticker in Next.
+- Ported the exact 19 Bottom built-in screens from the original read-only source,
+  including nested ANY/ALL semantics and priority sorting. Published an immutable,
+  hash-bound Bottom sidecar with the original scalar fields plus read-only trade-plan
+  projections; the UI exposes grouped source filters and columns without touching
+  the Bottom scorer or ranking.
+- Added the standalone responsive `StockScout-Bottom-Fishing` PWA. It reads the same
+  active Unified run, sidecar and chart shards, shares the owner Supabase state, and
+  provides Overview, Screener, all 19 presets, setup/stage/group lenses, watchlists,
+  saved screens, alerts and ticker details without a second scan or backend copy.
+- Hardened `publish-existing` with an explicit registered run ID and a documented
+  `scan_invoked=false` contract; upstream drift now distinguishes data-only changes
+  from code/config/schema/workflow changes.
+- Local verification: Ruff passed; 157 Python tests passed with 2 intentional skips;
+  64 Unified frontend tests and production build passed; 6 Playwright desktop/mobile
+  fixtures, 6 Deno Edge tests, and 2 Bottom PWA tests/builds passed. The 2026-08-25
+  production fixture gives real matches for 18/19 exact Bottom screens; the Strict
+  RWB screen correctly has no candidate satisfying all of its original thresholds.

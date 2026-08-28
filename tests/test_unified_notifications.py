@@ -36,7 +36,7 @@ def test_five_telegram_series_keep_every_selected_candidate_without_truncation(t
     bottom = tmp_path / "bottom.json"
     write_json(bottom, wire_dump(_scan()))
     alerts = tmp_path / "alerts.json"
-    write_json(alerts, {"events": [{"ticker": "ALERT", "price": 10, "name": "Price crossed"}]})
+    write_json(alerts, {"events": [{"ticker": "ALERT", "price": 10, "name": "Daily trend", "drawingType": "trendline", "condition": "crossing_up", "previousPrice": 9.5, "currentPrice": 10.5, "previousLevel": 10.0, "currentLevel": 10.2, "sessionDate": "2026-08-21", "deepLink": "https://example.test/?ticker=ALERT&drawing=abc"}]})
 
     series = build_series(public_dir=public, bottom_raw_scan=bottom, alerts_path=alerts)
 
@@ -47,6 +47,8 @@ def test_five_telegram_series_keep_every_selected_candidate_without_truncation(t
     assert all(f"N{index:02d}" in "\n".join(series["next"]) for index in range(25))
     assert all(f"R{index:02d}" in "\n".join(series["ryan-original"]) for index in range(25))
     assert "ALERT" in "\n".join(series["alerts"])
+    assert "trendline / crossing up" in "\n".join(series["alerts"])
+    assert "Open and highlight drawing" in "\n".join(series["alerts"])
 
 
 def test_delivery_resumes_each_series_and_deduplicates_completed_content(monkeypatch) -> None:

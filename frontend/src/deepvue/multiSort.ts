@@ -1,3 +1,5 @@
+import{fieldValue}from'./filterEngine.ts'
+
 export type SortRule={id:string;desc:boolean}
 type SortableStock={ticker:string;[key:string]:any}
 
@@ -12,7 +14,7 @@ function sortValue(stock:SortableStock,id:string):any{
   if(id===SMA_FRESH_SORT){const age=stock.sma10w20wCrossAge,cross=stock.sma10w20wCross;return typeof age==='number'&&cross?-age+(cross==='BULL'?0.25:0):-1e9}
   if(id==='opportunityScore')return opportunity(stock)
   if(id==='primarySetup')return setup(stock)
-  return stock[id]
+  return fieldValue(stock,id)
 }
 
 function compareValues(a:any,b:any):number{
