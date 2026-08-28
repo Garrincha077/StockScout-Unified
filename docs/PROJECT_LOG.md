@@ -164,4 +164,4 @@
 
 ## 2026-08-28 — GitHub Pages runtime maintenance
 
-- Upgraded the fully pinned Pages artifact action from v3 to v5.0.0 in both EOD and frontend-only publish workflows, removing the deprecated Node.js 20 action runtime without changing scan or deployment semantics.
+- Upgraded the fully pinned Pages artifact and deployment actions to v5.0.0 across EOD and frontend-only publish workflows, removing their deprecated Node.js 20 runtimes without changing scan or deployment semantics.
