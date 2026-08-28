@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {isBrowserSafeSupabaseKey,OWNER_DATA_SCHEMA,requireBrowserSafeSupabaseKey} from './supabasePublicConfig.ts'
+import {googleAuthAvailability,isBrowserSafeSupabaseKey,OWNER_DATA_SCHEMA,requireBrowserSafeSupabaseKey} from './supabasePublicConfig.ts'
 
 function jwt(role:string){
   const payload=Buffer.from(JSON.stringify({role})).toString('base64url')
@@ -14,4 +14,11 @@ test('public clients accept only publishable or legacy anon Supabase keys',()=>{
   assert.equal(isBrowserSafeSupabaseKey('sb_secret_abcdefghijklmnop'),false)
   assert.equal(isBrowserSafeSupabaseKey(jwt('service_role')),false)
   assert.throws(()=>requireBrowserSafeSupabaseKey('not-a-key'),/secret\/service-role/)
+})
+
+test('public auth settings expose Google provider availability without guessing',()=>{
+  assert.equal(googleAuthAvailability({external:{google:true}}),true)
+  assert.equal(googleAuthAvailability({external:{google:false}}),false)
+  assert.equal(googleAuthAvailability({external:{}}),null)
+  assert.equal(googleAuthAvailability(null),null)
 })

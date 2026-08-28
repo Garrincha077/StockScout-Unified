@@ -25,3 +25,11 @@ export function requireBrowserSafeSupabaseKey(value:string){
   }
   return value.trim()
 }
+
+export function googleAuthAvailability(value:unknown):boolean|null{
+  if(!value||typeof value!=='object'||Array.isArray(value))return null
+  const external=(value as Record<string,unknown>).external
+  if(!external||typeof external!=='object'||Array.isArray(external))return null
+  const google=(external as Record<string,unknown>).google
+  return typeof google==='boolean'?google:null
+}
