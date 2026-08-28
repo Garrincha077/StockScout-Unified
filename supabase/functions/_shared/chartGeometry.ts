@@ -53,6 +53,20 @@ export function logicalIndexAtTime(times:string[],time:string):number|null{
   return low+(target-values[low])/Math.max(1,values[high]-values[low])
 }
 
+export function utcTimeAtLogicalIndex(times:string[],logical:number):string|null{
+  if(!times.length||!Number.isFinite(logical))return null
+  const days=times.map(utcDay)
+  if(days.some(day=>day===null))return null
+  const values=days as number[]
+  if(values.length===1)return utcDayString(values[0]+logical)
+  const last=values.length-1
+  if(logical<=0)return utcDayString(values[0]+logical*(values[1]-values[0]))
+  if(logical>=last)return utcDayString(values[last]+(logical-last)*(values[last]-values[last-1]))
+  const low=Math.floor(logical),high=Math.ceil(logical)
+  if(low===high)return utcDayString(values[low])
+  return utcDayString(values[low]+(values[high]-values[low])*(logical-low))
+}
+
 function baseLineValue(drawing:GeometryDrawing,time:string):number|null{
   const first=drawing.points[0],second=drawing.points[1]
   if(!first||!second)return null
