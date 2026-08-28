@@ -201,3 +201,15 @@
   Real-data browser QA covered Next Screener/Groups/Factors, Bottom Fishing and Ryan
   at 320, 390, 768 and 1440 px. The GMLI fixture passed in Playwright; the external
   Browser QA extension itself blocks direct raw GMLI JSON navigation.
+
+## 2026-08-29 — Bottom mobile chart height hotfix
+
+- Fixed the stacked cockpit height chain where the resizable chart panel retained
+  roughly 490 px but its content wrapper collapsed to about 32 px, leaving
+  Lightweight Charts with a two-pixel canvas and a large empty Bottom chart.
+- The mobile chart content and chart box now explicitly inherit the full panel
+  height. Real-data checks show the Bottom and Next canvases filling the intended
+  chart area with candlesticks, volume and published price levels intact.
+- Added a Pixel 5 regression assertion that requires the resizable panel content
+  to match its parent and the rendered chart canvas to remain taller than 250 px.
+  No scan, scoring, ranking, trade-plan or owner-state behavior changed.

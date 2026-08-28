@@ -60,6 +60,8 @@
   .layout-cockpit .dv-work>.dv-tablebox{height:auto;min-height:0}
   .layout-cockpit .dv-tablewrap{flex:none;height:clamp(420px,58svh,620px)}
   .layout-cockpit .dv-detail{order:-1;height:auto!important;max-height:none;overflow:visible}
+  .layout-cockpit .dv-chart-resizer>.ss-height-content{height:100%!important;min-height:0}
+  .layout-cockpit .dv-chart-resizer>.ss-height-content>.dv-chartbox{height:100%!important;min-height:0!important}
   .layout-cockpit .dv-detailhead{top:var(--ss-global-h)}
   .layout-cockpit.mode-next .dv-detailhead{top:calc(var(--ss-global-h) + var(--ss-context-h))}
   .layout-cockpit .dv-detail-sections{top:calc(var(--ss-global-h) + 54px)}
