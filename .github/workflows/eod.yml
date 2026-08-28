@@ -282,13 +282,13 @@ jobs:
           python -m pip install -e .
       - name: Download verified scan artifact for Telegram
         if: ${{ github.event_name == 'schedule' || inputs.notify }}
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: github-pages
           path: .pages
       - name: Download private Bottom digest input
         if: ${{ github.event_name == 'schedule' || inputs.notify }}
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: unified-notify-${{ github.run_id }}-${{ github.run_attempt }}
           path: .notify
