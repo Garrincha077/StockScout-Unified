@@ -161,3 +161,7 @@
 
 - Unified now reads Supabase's public Auth settings once and only offers Google sign-in when that provider is actually enabled.
 - Until Google OAuth credentials are configured, the owner panel presents the working magic-link path directly with a 60-second client countdown and an explicit built-in email quota warning instead of a dead Google button.
+
+## 2026-08-28 — GitHub Pages runtime maintenance
+
+- Upgraded the fully pinned Pages artifact action from v3 to v5.0.0 in both EOD and frontend-only publish workflows, removing the deprecated Node.js 20 action runtime without changing scan or deployment semantics.
