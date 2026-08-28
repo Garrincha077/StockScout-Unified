@@ -156,3 +156,8 @@
 
 - Added a covering `(drawing_id, user_id)` index for the owner-safe drawing-alert foreign key after the Supabase performance advisor flagged the original query-oriented partial index as non-covering.
 - This is a schema-only, backward-compatible optimization; alert payloads, ranking, scoring, and market-data processing are unchanged.
+
+## 2026-08-28 — Auth provider-aware fallback
+
+- Unified now reads Supabase's public Auth settings once and only offers Google sign-in when that provider is actually enabled.
+- Until Google OAuth credentials are configured, the owner panel presents the working magic-link path directly with a 60-second client countdown and an explicit built-in email quota warning instead of a dead Google button.
