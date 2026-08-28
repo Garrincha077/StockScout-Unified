@@ -165,3 +165,4 @@
 ## 2026-08-28 — GitHub Pages runtime maintenance
 
 - Upgraded the fully pinned Pages artifact and deployment actions to v5.0.0 across EOD and frontend-only publish workflows, removing their deprecated Node.js 20 runtimes without changing scan or deployment semantics.
+- The standalone Bottom PWA now carries the verified active Unified run ID through every push or manual build, embeds it in the frontend contract, and verifies the same ID in the deployed JavaScript asset before its Pages job can pass.
