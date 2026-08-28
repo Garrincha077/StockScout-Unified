@@ -213,3 +213,11 @@
 - Added a Pixel 5 regression assertion that requires the resizable panel content
   to match its parent and the rendered chart canvas to remain taller than 250 px.
   No scan, scoring, ranking, trade-plan or owner-state behavior changed.
+
+## 2026-08-29 — Mobile drawing dock no longer covers chart
+
+- Reserved a 58 px action strip below the owner-enabled mobile chart and moved
+  Draw / Layers / Alert into that strip. The rendered candle canvas and drawing
+  overlay end before the strip, so the controls cannot hide price action.
+- Ryan remains read-only and does not receive the owner-tools strip. Added a
+  mobile E2E assertion that the dock starts at or below the chart bounds.

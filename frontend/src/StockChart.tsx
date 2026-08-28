@@ -91,7 +91,7 @@ export default function StockChart({bars,interval='W',range='5Y',display='Price'
   const toggleFullscreen=()=>{if(!shellRef.current)return;if(document.fullscreenElement)void document.exitFullscreen();else void shellRef.current.requestFullscreen()}
   if(mini)return <div className="dv-minichart" ref={ref}/>
   const drawingTicker=ticker??stock?.ticker
-  return <div className={`drawing-chart-shell${fullscreen?' is-fullscreen':''}`} ref={shellRef} onDoubleClick={()=>engineRef.current?.chart.timeScale().fitContent()}>
+  return <div className={`drawing-chart-shell${ownerTools?' owner-tools':''}${fullscreen?' is-fullscreen':''}`} ref={shellRef} onDoubleClick={()=>engineRef.current?.chart.timeScale().fitContent()}>
     <div className="chart-status-row"><span>{interval==='D'?'Daily':'Weekly'} · {range}</span>{priceBasis?<span>{priceBasis.replaceAll('_',' ')}</span>:null}{freshness?<span>{freshness}</span>:null}<button type="button" onClick={event=>{event.stopPropagation();toggleFullscreen()}} aria-pressed={fullscreen}>{fullscreen?'Exit fullscreen':'Fullscreen'}</button></div>
     {tooltip?<div className="chart-crosshair-tooltip"><b>{tooltip.time}</b><span>O {tooltip.open.toFixed(2)}</span><span>H {tooltip.high.toFixed(2)}</span><span>L {tooltip.low.toFixed(2)}</span><span>C {tooltip.close.toFixed(2)}</span><span>V {Intl.NumberFormat('en',{notation:'compact'}).format(tooltip.volume)}</span></div>:null}
     <div className="dv-chart" ref={ref}/>
