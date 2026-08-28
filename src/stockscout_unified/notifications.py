@@ -95,6 +95,30 @@ def _mode_parts(*, title: str, session_date: str, rows: list[dict[str, Any]], sc
     return split_telegram_message("\n\n".join(body))
 
 
+def _drawing_alert_parts(session_date: str, rows: list[dict[str, Any]]) -> list[str]:
+    body = [f"*Triggered drawing alerts* `{_escape_md_v2(session_date)}`", r"Daily EOD geometry \- one notification per armed episode\."]
+    for index, row in enumerate(rows, 1):
+        ticker = _escape_md_v2(str(row.get("ticker") or "-"))
+        name = _escape_md_v2(str(row.get("name") or "Drawing alert"))
+        drawing_type = _escape_md_v2(str(row.get("drawingType") or "drawing").replace("_", " "))
+        condition = _escape_md_v2(str(row.get("condition") or "triggered").replace("_", " "))
+        previous_price, current_price = row.get("previousPrice"), row.get("currentPrice")
+        previous_level, current_level = row.get("previousLevel"), row.get("currentLevel")
+        price_line = f"Close {float(previous_price):.2f} → {float(current_price):.2f}" if isinstance(previous_price, (int, float)) and isinstance(current_price, (int, float)) else f"Close {float(row.get('price') or 0):.2f}"
+        level_line = f"Level {float(previous_level):.2f} → {float(current_level):.2f}" if isinstance(previous_level, (int, float)) and isinstance(current_level, (int, float)) else "Level unavailable"
+        lines = [
+            fr"*{index}\. {ticker}* \- {_escape_md_v2(str(row.get('sessionDate') or session_date))}",
+            fr"{name} \- `{drawing_type} / {condition}`",
+            _escape_md_v2(f"{price_line} | {level_line}"),
+        ]
+        deep_link = str(row.get("deepLink") or "").strip()
+        if deep_link:
+            safe_url = deep_link.replace("\\", "%5C").replace(")", "%29")
+            lines.append(f"[Open and highlight drawing]({safe_url})")
+        body.append("\n".join(lines))
+    return split_telegram_message("\n\n".join(body))
+
+
 def _ma_cluster_parts(scan_path: str | Path) -> list[str]:
     payload = json.loads(Path(scan_path).read_text(encoding="utf-8"))
     candidates = [Candidate.model_validate(row) for row in payload.get("candidates") or []]
@@ -151,7 +175,7 @@ def build_series(
         alert_rows = [row for row in (raw.get("events") if isinstance(raw, dict) else raw) or [] if isinstance(row, dict)]
     alert_date = str(next_manifest["sessionDate"])
     if alert_rows:
-        series["alerts"] = _mode_parts(title="Triggered alerts", session_date=alert_date, rows=alert_rows, score_field="score", label="Alert")
+        series["alerts"] = _drawing_alert_parts(alert_date, alert_rows)
     else:
         series["alerts"] = split_telegram_message(f"*Triggered alerts* `{_escape_md_v2(alert_date)}`\nNo owner alerts triggered\\.")
     if any(not parts or any(len(part) > 3900 for part in parts) for parts in series.values()):

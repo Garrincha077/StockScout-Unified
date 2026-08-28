@@ -18,18 +18,9 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import {
-  CandlestickSeries,
-  ColorType,
-  HistogramSeries,
-  LineSeries,
-  LineStyle,
-  createChart,
-  type IChartApi,
-  type ISeriesApi,
-} from "lightweight-charts";
-import {
   builtInScreens,
   calculatePositionSize,
+  fieldValue,
   fieldDefs,
   invalidRules,
   levelFitsExpandedCandleBounds,
@@ -46,6 +37,7 @@ import {
   type RuleGroup,
   type ScreenState,
 } from "./deepvue/filterEngine";
+import{bottomBuiltInScreens,bottomCoreColumns,bottomFieldDefs,bottomRecipeTabs}from'./deepvue/bottomRegistry'
 import { marketRegimeLabel, nextGridCount } from "./deepvue/runtime";
 import { useStockScoutData } from "./data/StockScoutDataProvider";
 import { applyMultiSort } from "./deepvue/multiSort";
@@ -62,9 +54,6 @@ import StockChart from'./StockChart'
 import{ResizableHeight,ResizableWorkspace}from'./ResizablePanels'
 
 const OwnerWorkspace = lazy(() => import("./owner/OwnerWorkspace"));
-const ChartDrawingOverlay = lazy(
-  () => import("./owner/ChartDrawingOverlay"),
-);
 
 type Bar = {
   time: string;
@@ -107,7 +96,14 @@ export type Stock = {
   score?: number;
   primarySetup?: string;
   setupTags?: string[];
+  setupNames?: string[];
   setupMatchCount?: number;
+  accumulationScore?:number;
+  crashBaseScore?:number;
+  emaStackLaunchScore?:number;
+  maClusterScore?:number;
+  longBaseScore?:number;
+  smaCompressionPct?:number;
   opportunityScore?: number;
   opportunityPotential?: number;
   opportunityTiming?: number;
@@ -235,6 +231,7 @@ export type Stock = {
   focusBlend?: number;
   tradeStatus?: TradeStatus;
   entryRiskPct?: number | null;
+  actionability?:string;
   tacticalStopLevel?: number | null;
   tradePlan?: Partial<TradePlanV1> & Record<string, any>;
   reasons?: string[];
@@ -286,6 +283,16 @@ const defaultVisibility: VisibilityState = {
   groupRS: false,
   groupConfidence: false,
 };
+const allUnifiedColumnIds=[
+  'watch','scanOrder','ticker','focusBlend','tradeStatus','triggerState','entryRiskPct','distanceToTrigger','actionability','opportunityScore','ema10d20dSpreadPct','sma10w20wSpreadPct',
+  'opportunityTier','opportunityRank','opportunityPotential','opportunityTiming','opportunityGroupModifier','opportunityFundModifier','opportunityPenalty','emergingLeaderScore','leadershipScore',
+  'groupRank','groupRS','groupConfidence','fundamentalEvidenceScore','fundamentalEvidenceConfidence','fundamentalEvidenceCoverage','revenueYoY','epsYoY','operatingCashFlowYoY',
+  'freeCashFlowYoY','freeCashFlowMargin','totalDebtYoY','netDebt','shareDilutionYoY','originalBuyScore','originalRR','originalTTPasses','originalVcpQuality','originalAdVolumeRatio',
+  'originalRiskPct','originalSellScore','changeImpact','todaySignals','exclusionReasons','primarySetup','confluence','freshnessScore','rsRank','rsRankDelta','rsAcceleration','stage',
+  'stage2AgeWeeks','trendTemplatePasses','ema10d','ema20d','ema10d20dCrossAge','sma10w','sma20w','sma10w20wCrossAge','return3m','prior9mReturn','volumeRatio','breakoutPct',
+  'vcpScore','atrCompression','tightRange20','baseWeeks','distance10w','distance30w','rsFromHigh','structureScore','baseScore','triggerScore','neglectedScore','avgDollarVolume20','fundamentalSupport',
+]as const
+const bottomDefaultVisibility:VisibilityState={...Object.fromEntries(bottomFieldDefs.map(field=>[field.id,false])),...Object.fromEntries(allUnifiedColumnIds.map(id=>[id,bottomCoreColumns.has(id)]))}
 const recipeTabs = [
   "All",
   "Neglected → Leader",
@@ -485,196 +492,16 @@ function PriceChart({
   mini?: boolean;
   stock?: Stock;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [drawingApi, setDrawingApi] = useState<{
-    chart: IChartApi;
-    candle: ISeriesApi<"Candlestick">;
-    bars: Bar[];
-  } | null>(null);
-  useEffect(() => {
-    if (!ref.current || !bars.length) return;
-    setDrawingApi(null);
-    const source = chartSource(bars, interval, range);
-    const chart = createChart(ref.current, {
-      autoSize: true,
-      layout: {
-        background: { type: ColorType.Solid, color: "#08111d" },
-        textColor: mini ? "#63758d" : "#8396ae",
-        attributionLogo: false,
-      },
-      grid: {
-        vertLines: { color: mini ? "transparent" : "#142238" },
-        horzLines: { color: mini ? "#102033" : "#142238" },
-      },
-      timeScale: {
-        borderVisible: !mini,
-        borderColor: "#243248",
-        rightOffset: 2,
-        timeVisible: false,
-      },
-      rightPriceScale: {
-        borderVisible: !mini,
-        borderColor: "#243248",
-        scaleMargins: mini ? { top: 0.08, bottom: 0.16 } : undefined,
-      },
-      handleScroll: !mini,
-      handleScale: !mini,
-    });
-    if (mode === "Price") {
-      const c = chart.addSeries(CandlestickSeries, {
-        upColor: "#20d886",
-        downColor: "#f05d6c",
-        wickUpColor: "#20d886",
-        wickDownColor: "#f05d6c",
-        borderVisible: false,
-        priceLineVisible: !mini,
-        lastValueVisible: !mini,
-      });
-      c.setData(
-        source.map((b) => ({
-          time: b.time,
-          open: b.open,
-          high: b.high,
-          low: b.low,
-          close: b.close,
-        })) as any,
-      );
-      if (!mini) setDrawingApi({ chart, candle: c, bars: source });
-      if (!mini && stock) {
-        const plan = tradePlanOf(stock);
-        if (plan.trigger != null)
-          c.createPriceLine({
-            price: plan.trigger,
-            color: "#62a8ff",
-            lineWidth: 2,
-            lineStyle: LineStyle.Dashed,
-            axisLabelVisible: true,
-            title: "Entry trigger",
-          });
-        if (plan.tactical != null)
-          c.createPriceLine({
-            price: plan.tactical,
-            color: "#ff6f7d",
-            lineWidth: 2,
-            lineStyle: LineStyle.Solid,
-            axisLabelVisible: true,
-            title: "Tactical stop",
-          });
-        if (
-          plan.structural != null &&
-          levelFitsExpandedCandleBounds(plan.structural, source, 0.1) &&
-          plan.structural !== plan.tactical
-        )
-          c.createPriceLine({
-            price: plan.structural,
-            color: "#d99a62",
-            lineWidth: 1,
-            lineStyle: LineStyle.Dotted,
-            axisLabelVisible: true,
-            title: "Structural invalidation",
-          });
-      }
-      const closes = source.map((b) => b.close);
-      const specs =
-        interval === "W"
-          ? [
-              [10, "#f3c85b", "sma"],
-              [20, "#4ca3ff", "sma"],
-            ]
-          : [
-              [10, "#f3c85b", "ema"],
-              [20, "#4ca3ff", "ema"],
-              [50, "#a36cff", "sma"],
-              [200, "#26c7b7", "sma"],
-            ];
-      for (const [n, color, kind] of specs as [
-        number,
-        string,
-        "ema" | "sma",
-      ][]) {
-        const vals = kind === "ema" ? ema(closes, n) : ma(closes, n),
-          line = chart.addSeries(LineSeries, {
-            color,
-            lineWidth: mini ? 1 : 2,
-            priceLineVisible: false,
-            lastValueVisible: false,
-          });
-        line.setData(
-          source
-            .map((b, i) =>
-              vals[i] == null ? null : { time: b.time, value: vals[i] },
-            )
-            .filter(Boolean) as any,
-        );
-      }
-      const v = chart.addSeries(HistogramSeries, {
-        priceFormat: { type: "volume" },
-        priceScaleId: "",
-        lastValueVisible: false,
-        priceLineVisible: false,
-      });
-      v.priceScale().applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
-      v.setData(
-        source.map((b) => ({
-          time: b.time,
-          value: b.volume,
-          color:
-            b.close >= b.open ? "rgba(32,216,134,.22)" : "rgba(240,93,108,.22)",
-        })) as any,
-      );
-    } else if (mode === "RS") {
-      const l = chart.addSeries(LineSeries, {
-        color: "#54a6ff",
-        lineWidth: 2,
-        priceLineVisible: false,
-      });
-      l.setData(
-        source
-          .filter((b) => b.rs > 0)
-          .map((b) => ({ time: b.time, value: b.rs })) as any,
-      );
-    } else {
-      const v = chart.addSeries(HistogramSeries, {
-        priceFormat: { type: "volume" },
-        priceScaleId: "",
-        priceLineVisible: false,
-      });
-      v.setData(
-        source.map((b) => ({
-          time: b.time,
-          value: b.volume,
-          color:
-            b.close >= b.open ? "rgba(32,216,134,.72)" : "rgba(240,93,108,.72)",
-        })) as any,
-      );
-    }
-    chart.timeScale().fitContent();
-    return () => {
-      setDrawingApi(null);
-      chart.remove();
-    };
-  }, [bars, interval, range, mode, mini, stock]);
-  if (mini) return <div className="dv-minichart" ref={ref} />;
-  return (
-    <div className="drawing-chart-shell">
-      <div className="dv-chart" ref={ref} />
-      {drawingApi && mode === "Price" && stock ? (
-        <Suspense fallback={null}>
-          <ChartDrawingOverlay
-            chart={drawingApi.chart}
-            candle={drawingApi.candle}
-            bars={drawingApi.bars}
-            ticker={stock.ticker}
-            interval={interval}
-          />
-        </Suspense>
-      ) : null}
-    </div>
-  );
+  return <StockChart bars={bars} interval={interval} range={range} display={mode} mini={mini} stock={stock} />;
 }
 
 function DeepVueTerminal() {
   const { mode, definition } = useMode();
+  const modeFieldDefs=mode==='bottom-fishing'?bottomFieldDefs:fieldDefs
+  const modeBuiltInScreens=mode==='bottom-fishing'?bottomBuiltInScreens:builtInScreens
+  const recipeOptions=mode==='bottom-fishing'?bottomRecipeTabs:recipeTabs.map(value=>({label:value,value}))
+  const modeDefaultVisibility=mode==='bottom-fishing'?bottomDefaultVisibility:defaultVisibility
+  const storagePrefix=`dv:${mode}:${mode==='bottom-fishing'?'v4':'v3'}`
   const {
     core,
     error,
@@ -687,30 +514,32 @@ function DeepVueTerminal() {
     loadCandidateDetail,
     loadExcluded,
     loadHistory,
+    loadContextAsset,
   } = useStockScoutData();
   const owner = useOwnerData();
   const payload = core as Payload | null;
+  const routeQuery=new URLSearchParams(location.search),groupType=routeQuery.get('groupType'),groupName=routeQuery.get('group')
   const [page, setPage] = useState<Page>("Screener"),
     [recipe, setRecipe] = useState("All"),
     [query, setQuery] = useState("");
   const [sorting, setSorting] = useState<SortingState>(() =>
-    loadLocal("dv-sorts-v2", []),
+    loadLocal(`${storagePrefix}:sorts`, mode==='bottom-fishing'?[{id:'focusBlend',desc:true}]:[]),
   );
   const [visibility, setVisibility] = useState<VisibilityState>(() =>
-    loadLocal("dv-cols-v5", defaultVisibility),
+    loadLocal(`${storagePrefix}:columns`, modeDefaultVisibility),
   );
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: 100,
   });
   const [rootLogic, setRootLogic] = useState<Logic>(() =>
-    loadLocal("dv-root-logic", "ALL"),
+    loadLocal(`${storagePrefix}:root-logic`, "ALL"),
   );
   const [groups, setGroups] = useState<RuleGroup[]>(() =>
-    loadLocal("dv-groups-v1", []),
+    loadLocal(`${storagePrefix}:groups`, []),
   );
   const [customScreens, setCustomScreens] = useState<ScreenState[]>(() =>
-    loadLocal("dv-custom-screens-v1", []),
+    loadLocal(`${storagePrefix}:screens`, []),
   );
   const [activeScreen, setActiveScreen] = useState("Custom"),
     [builderOpen, setBuilderOpen] = useState(false),
@@ -722,6 +551,7 @@ function DeepVueTerminal() {
     bars: [],
   });
   const [selectedDetail, setSelectedDetail] = useState<Stock | null>(null);
+  const[bottomSidecar,setBottomSidecar]=useState<Record<string,Stock>|null>(null)
   const [excludedState, setExcludedState] = useState<RowsLoadState<Stock>>({
     status: "idle",
     rows: [],
@@ -750,28 +580,28 @@ function DeepVueTerminal() {
     [page],
   );
   useEffect(
-    () => localStorage.setItem("dv-sorts-v2", JSON.stringify(sorting)),
-    [sorting],
+    () => localStorage.setItem(`${storagePrefix}:sorts`, JSON.stringify(sorting)),
+    [sorting,storagePrefix],
   );
   useEffect(
-    () => localStorage.setItem("dv-cols-v5", JSON.stringify(visibility)),
-    [visibility],
+    () => localStorage.setItem(`${storagePrefix}:columns`, JSON.stringify(visibility)),
+    [visibility,storagePrefix],
   );
   useEffect(
-    () => localStorage.setItem("dv-root-logic", JSON.stringify(rootLogic)),
-    [rootLogic],
+    () => localStorage.setItem(`${storagePrefix}:root-logic`, JSON.stringify(rootLogic)),
+    [rootLogic,storagePrefix],
   );
   useEffect(
-    () => localStorage.setItem("dv-groups-v1", JSON.stringify(groups)),
-    [groups],
+    () => localStorage.setItem(`${storagePrefix}:groups`, JSON.stringify(groups)),
+    [groups,storagePrefix],
   );
   useEffect(
     () =>
       localStorage.setItem(
-        "dv-custom-screens-v1",
+        `${storagePrefix}:screens`,
         JSON.stringify(customScreens),
       ),
-    [customScreens],
+    [customScreens,storagePrefix],
   );
   const loadBars = useCallback(
     async (ticker: string, retry = false): Promise<ChartLoadState> => {
@@ -880,7 +710,9 @@ function DeepVueTerminal() {
     if (page === "Owner" && !owner.user) setPage("Screener");
   }, [page, owner.user]);
 
-  const universe = payload?.universe || [];
+  useEffect(()=>{if(mode!=='bottom-fishing'||bottomSidecar||(!builderOpen&&!columnsOpen))return;let live=true;loadContextAsset<{rows:Stock[]}>('bottomScreener').then(payload=>{if(live)setBottomSidecar(Object.fromEntries(payload.rows.map(row=>[row.ticker,row]))) }).catch(()=>undefined);return()=>{live=false}},[mode,bottomSidecar,builderOpen,columnsOpen,loadContextAsset])
+
+  const universe = useMemo(()=>{const rows=payload?.universe||[];return bottomSidecar?rows.map(row=>({...row,...bottomSidecar[row.ticker],id:row.id,scanOrder:row.scanOrder})):rows},[payload?.universe,bottomSidecar]);
   const displayUniverse = page === "Excluded" ? excludedState.rows : universe;
   const watchlist = owner.watchlist;
   const toggleWatch = (ticker: string) => {
@@ -898,11 +730,15 @@ function DeepVueTerminal() {
         )
           return false;
         if (page === "Excluded") return true;
+        if(mode==='next'&&groupName){
+          const value=groupType==='industry'?s.industryProxy:s.sectorProxy
+          if(String(value??'')!==groupName)return false
+        }
         if (reviewScope) return matchesReviewScope(s, reviewScope);
         if (page === "Watchlist" && !watchlist.includes(s.ticker)) return false;
         if (page === "Changes" && !s.changedToday) return false;
         if (recipe !== "All" && !tagsOf(s).includes(recipe)) return false;
-        return matchesGroups(s, groups, rootLogic);
+        return matchesGroups(s, groups, rootLogic,modeFieldDefs);
       }),
     [
       displayUniverse,
@@ -913,6 +749,10 @@ function DeepVueTerminal() {
       recipe,
       groups,
       rootLogic,
+      modeFieldDefs,
+      mode,
+      groupType,
+      groupName,
     ],
   );
   const sortedData = useMemo(
@@ -923,6 +763,19 @@ function DeepVueTerminal() {
     [filtered, sorting],
   );
   const candidatePage = !["Market", "History", "Owner"].includes(page);
+  useEffect(()=>{
+    const advance=(event:KeyboardEvent)=>{
+      if(event.code!=='Space'||event.defaultPrevented||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey||!candidatePage||!sortedData.length)return
+      const target=event.target as HTMLElement|null
+      if(target?.closest('input,select,textarea,button,a,[contenteditable="true"],[role="dialog"]'))return
+      event.preventDefault()
+      const current=Math.max(0,sortedData.findIndex(row=>row.ticker===selectedTicker)),next=(current+1)%sortedData.length
+      selectTicker(sortedData[next].ticker)
+      setPagination(value=>({...value,pageIndex:Math.floor(next/value.pageSize)}))
+    }
+    window.addEventListener('keydown',advance)
+    return()=>window.removeEventListener('keydown',advance)
+  },[candidatePage,sortedData,selectedTicker,selectTicker])
   const selected = candidatePage
     ? sortedData.find((s) => s.ticker === selectedTicker) || sortedData[0]
     : undefined;
@@ -989,7 +842,8 @@ function DeepVueTerminal() {
   );
 
   const columns = useMemo(
-    () => [
+    () => {
+      const baseColumns=[
       helper.display({
         id: "watch",
         header: "",
@@ -1047,6 +901,15 @@ function DeepVueTerminal() {
           mode !== "bottom-fishing" || i.getValue() == null
             ? "—"
             : `${fmt(i.getValue(), 1)}%`,
+      }),
+      helper.accessor((s)=>String(s.tradePlan?.triggerState??s.tradePlan?.trigger_state??'—'),{
+        id:'triggerState',header:'Trigger state',cell:(i)=><span className="dv-primary">{i.getValue().replaceAll('_',' ')}</span>,
+      }),
+      helper.accessor((s)=>s.actionability??'—',{
+        id:'actionability',header:'Actionability',cell:(i)=><span>{String(i.getValue()).replaceAll('_',' ')}</span>,
+      }),
+      helper.accessor((s)=>{const trigger=tradePlanOf(s).trigger;return trigger&&Number.isFinite(s.price)?(s.price-trigger)/trigger*100:null},{
+        id:'distanceToTrigger',header:'To trigger',cell:(i)=>i.getValue()==null?'—':signed(i.getValue(),1),
       }),
       helper.accessor((s) => opp(s), {
         id: "opportunityScore",
@@ -1575,7 +1438,16 @@ function DeepVueTerminal() {
         header: "Fund",
         cell: (i) => (i.getValue() == null ? "—" : i.getValue() ? "✓" : "×"),
       }),
-    ],
+      ]
+      if(mode!=='bottom-fishing')return baseColumns
+      const existing=new Set(['ticker','focusBlend','actionability'])
+      const sourceColumns=bottomFieldDefs.filter(field=>!existing.has(field.id)).map(field=>helper.accessor((stock)=>fieldValue(stock,field.id),{
+        id:field.id,
+        header:field.label,
+        cell:(info)=>{const value=info.getValue();if(value===null||value===undefined||value==='')return'—';if(field.kind==='boolean')return value?'✓':'×';if(field.kind==='number'&&Number.isFinite(Number(value)))return Number(value).toLocaleString('en',{maximumFractionDigits:2});return Array.isArray(value)?value.join(' · '):String(value).replaceAll('_',' ')},
+      }))
+      return[...baseColumns,...sourceColumns]
+    },
     [watchlist, owner.user, mode],
   );
   const table = useReactTable({
@@ -1616,13 +1488,13 @@ function DeepVueTerminal() {
       return a;
     });
 
-  const allScreens = [...builtInScreens, ...customScreens];
-  const invalidRuleCount = invalidRules(groups).length;
+  const allScreens = [...modeBuiltInScreens, ...customScreens];
+  const invalidRuleCount = invalidRules(groups,modeFieldDefs).length;
   const applyScreen = (screen: ScreenState) => {
     setRootLogic(screen.rootLogic);
     setGroups(screen.groups);
     setSorting(screen.sorting);
-    setVisibility({ ...defaultVisibility, ...(screen.visibility || {}) });
+    setVisibility({ ...modeDefaultVisibility, ...(screen.visibility || {}) });
     setRecipe(screen.recipe || "All");
     setQuery(screen.query || "");
     setPagination({ pageIndex: 0, pageSize: screen.pageSize || 100 });
@@ -1654,12 +1526,12 @@ function DeepVueTerminal() {
     setScreenDialogOpen(false);
   };
   const deleteScreen = () => {
-    if (builtInScreens.some((s) => s.name === activeScreen)) return;
+    if (modeBuiltInScreens.some((s) => s.name === activeScreen)) return;
     setCustomScreens((x) => x.filter((s) => s.name !== activeScreen));
     setActiveScreen("Custom");
   };
   const addGroup = () =>
-    setGroups((g) => [...g, makeGroup("ALL", [makeRule("rsRank")])]);
+    setGroups((g) => [...g, makeGroup("ALL", [makeRule("rsRank",modeFieldDefs)])]);
   const updateGroup = (id: string, fn: (g: RuleGroup) => RuleGroup) =>
     setGroups((gs) => gs.map((g) => (g.id === id ? fn(g) : g)));
   const removeGroup = (id: string) =>
@@ -1765,6 +1637,7 @@ function DeepVueTerminal() {
           <button onClick={reload} aria-label="Refresh scan">
             ↻
           </button>
+          {mode==='bottom-fishing'?<a className="dv-open-bottom" href={`https://garrincha077.github.io/StockScout-Bottom-Fishing/?ticker=${encodeURIComponent(selectedTicker??'')}&screen=${encodeURIComponent(activeScreen)}`}>Open full Bottom Fishing</a>:null}
         </div>
       </header>
 
@@ -1781,6 +1654,7 @@ function DeepVueTerminal() {
       ) : (
         <>
           <section className="dv-screenbar">
+            {mode==='next'&&groupName?<a className="dv-group-filter" href={`?mode=next&view=screener&ticker=${encodeURIComponent(selectedTicker??'')}`}>{groupType==='industry'?'Industry':'Sector'}: {groupName} ×</a>:null}
             {page === "Excluded" ? (
               <>
                 <div className="dv-screenpick">
@@ -1819,7 +1693,7 @@ function DeepVueTerminal() {
                     }}
                   >
                     <option value="">Custom</option>
-                    {builtInScreens.map((s) => (
+                    {modeBuiltInScreens.map((s) => (
                       <option key={s.name}>{s.name}</option>
                     ))}
                     {customScreens.length > 0 && (
@@ -1875,17 +1749,17 @@ function DeepVueTerminal() {
 
           {page !== "Excluded" && (
             <section className="dv-recipes">
-              {recipeTabs.map((t) => (
+              {recipeOptions.map((option) => (
                 <button
-                  key={t}
-                  className={recipe === t ? "active" : ""}
-                  onClick={() => setRecipe(t)}
+                  key={option.value}
+                  className={recipe === option.value ? "active" : ""}
+                  onClick={() => setRecipe(option.value)}
                 >
-                  {t}
+                  {option.label}
                   <small>
-                    {t === "All"
+                    {option.value === "All"
                       ? universe.length
-                      : universe.filter((s) => tagsOf(s).includes(t)).length}
+                      : universe.filter((s) => tagsOf(s).includes(option.value)).length}
                   </small>
                 </button>
               ))}
@@ -1992,10 +1866,11 @@ function DeepVueTerminal() {
               addGroup={addGroup}
               updateGroup={updateGroup}
               removeGroup={removeGroup}
+              definitions={modeFieldDefs}
             />
           )}
           {columnsOpen && (
-            <ColumnPicker table={table} setVisibility={setVisibility} />
+            <ColumnPicker table={table} setVisibility={setVisibility} definitions={mode==='bottom-fishing'?bottomFieldDefs:undefined} defaultVisibilityState={modeDefaultVisibility}/>
           )}
 
           {excludedState.status === "error" && page === "Excluded" ? (
@@ -2186,6 +2061,7 @@ function FilterBuilder({
   addGroup,
   updateGroup,
   removeGroup,
+  definitions,
 }: {
   rootLogic: Logic;
   setRootLogic: (v: Logic) => void;
@@ -2194,6 +2070,7 @@ function FilterBuilder({
   addGroup: () => void;
   updateGroup: (id: string, fn: (g: RuleGroup) => RuleGroup) => void;
   removeGroup: (id: string) => void;
+  definitions:typeof fieldDefs;
 }) {
   return (
     <section className="dv-builder">
@@ -2259,9 +2136,9 @@ function FilterBuilder({
             </div>
             {g.rules.map((r) => {
               const def =
-                  fieldDefs.find((x) => x.id === r.field) || fieldDefs[0],
+                  definitions.find((x) => x.id === r.field) || definitions[0],
                 ops = opsByKind[def.kind],
-                ruleError = validateRule(r);
+                ruleError = validateRule(r,definitions);
               return (
                 <div
                   className={`dv-rule ${ruleError ? "invalid" : ""}`}
@@ -2271,8 +2148,8 @@ function FilterBuilder({
                     value={r.field}
                     onChange={(e) => {
                       const d =
-                        fieldDefs.find((x) => x.id === e.target.value) ||
-                        fieldDefs[0];
+                        definitions.find((x) => x.id === e.target.value) ||
+                        definitions[0];
                       updateGroup(g.id, (x) => ({
                         ...x,
                         rules: x.rules.map((q) =>
@@ -2283,7 +2160,7 @@ function FilterBuilder({
                       }));
                     }}
                   >
-                    {fieldDefs.map((f) => (
+                    {definitions.map((f) => (
                       <option value={f.id} key={f.id}>
                         {f.label}
                       </option>
@@ -2344,7 +2221,7 @@ function FilterBuilder({
               onClick={() =>
                 updateGroup(g.id, (x) => ({
                   ...x,
-                  rules: [...x.rules, makeRule("rsRank")],
+                  rules: [...x.rules, makeRule("rsRank",definitions)],
                 }))
               }
             >
@@ -2360,14 +2237,18 @@ function FilterBuilder({
 function ColumnPicker({
   table,
   setVisibility,
+  definitions,
+  defaultVisibilityState,
 }: {
   table: any;
   setVisibility: (v: VisibilityState) => void;
+  definitions?:typeof fieldDefs;
+  defaultVisibilityState:VisibilityState;
 }) {
-  const sets: Record<string, VisibilityState> = {
-    Core: defaultVisibility,
+  const nextSets: Record<string, VisibilityState> = {
+    Core: defaultVisibilityState,
     Opportunity: {
-      ...defaultVisibility,
+      ...defaultVisibilityState,
       opportunityScore: true,
       opportunityTier: true,
       opportunityRank: true,
@@ -2379,7 +2260,7 @@ function ColumnPicker({
       emergingLeaderScore: true,
     },
     Early: {
-      ...defaultVisibility,
+      ...defaultVisibilityState,
       prior9mReturn: true,
       stage2AgeWeeks: true,
       neglectedScore: true,
@@ -2387,7 +2268,7 @@ function ColumnPicker({
       vcpScore: false,
     },
     Crosses: {
-      ...defaultVisibility,
+      ...defaultVisibilityState,
       ema10d: true,
       ema20d: true,
       ema10d20dCrossAge: true,
@@ -2398,21 +2279,21 @@ function ColumnPicker({
       sma10w20wSpreadPct: true,
     },
     Groups: {
-      ...defaultVisibility,
+      ...defaultVisibilityState,
       leadershipScore: true,
       groupRank: true,
       groupRS: true,
       groupConfidence: true,
     },
     Breakout: {
-      ...defaultVisibility,
+      ...defaultVisibilityState,
       breakoutPct: true,
       volumeRatio: true,
       triggerScore: true,
       atrCompression: true,
     },
     Base: {
-      ...defaultVisibility,
+      ...defaultVisibilityState,
       vcpScore: true,
       atrCompression: true,
       tightRange20: true,
@@ -2420,7 +2301,7 @@ function ColumnPicker({
       baseScore: true,
     },
     Fundamentals: {
-      ...defaultVisibility,
+      ...defaultVisibilityState,
       fundamentalEvidenceScore: true,
       fundamentalEvidenceConfidence: true,
       fundamentalEvidenceCoverage: true,
@@ -2435,13 +2316,15 @@ function ColumnPicker({
       shareDilutionYoY: true,
     },
     Changes: {
-      ...defaultVisibility,
+      ...defaultVisibilityState,
       changeImpact: true,
       opportunityDelta: true,
       rsRankDelta: true,
       todaySignals: true,
     },
   };
+  const sets:Record<string,VisibilityState>=definitions?Object.fromEntries([...new Set(definitions.map(field=>field.group??'Source'))].map(group=>[group,{...defaultVisibilityState,...Object.fromEntries(definitions.filter(field=>(field.group??'Source')===group).map(field=>[field.id,true]))}])):nextSets
+  const grouped:Record<string,any[]>=table.getAllLeafColumns().filter((column:any)=>column.id!=='watch').reduce((result:Record<string,any[]>,column:any)=>{const group=definitions?.find(field=>field.id===column.id)?.group??(definitions?'Table':'Columns');(result[group]??=[]).push(column);return result},{} as Record<string,any[]>)
   return (
     <section className="dv-colpicker">
       <div className="dv-colsets">
@@ -2460,19 +2343,7 @@ function ColumnPicker({
           All
         </button>
       </div>
-      {table
-        .getAllLeafColumns()
-        .filter((c: any) => c.id !== "watch")
-        .map((c: any) => (
-          <label key={c.id}>
-            <input
-              type="checkbox"
-              checked={c.getIsVisible()}
-              onChange={c.getToggleVisibilityHandler()}
-            />
-            {String(c.columnDef.header || c.id)}
-          </label>
-        ))}
+      {Object.entries(grouped).map(([group,columns])=><div className="dv-colgroup" key={group}><b>{group}</b>{columns.map((c:any)=><label key={c.id}><input type="checkbox" checked={c.getIsVisible()} onChange={c.getToggleVisibilityHandler()}/>{String(c.columnDef.header||c.id)}</label>)}</div>)}
     </section>
   );
 }
@@ -2981,26 +2852,26 @@ function Detail({
         </header>
         <div className="trade-levels">
           <span>
-            <small>Ulazni trigger</small>
+            <small>Entry trigger</small>
             <b>{plan.trigger == null ? "—" : `$${fmt(plan.trigger, 2)}`}</b>
           </span>
           <span>
-            <small>Ulazna referenca</small>
+            <small>Entry reference</small>
             <b>{plan.entry == null ? "—" : `$${fmt(plan.entry, 2)}`}</b>
           </span>
           <span>
-            <small>Strukturna invalidacija</small>
+            <small>Structural invalidation</small>
             <b>
               {plan.structural == null
                 ? "—"
-                : `$${fmt(plan.structural, 2)}${structuralOutside ? " · izvan grafa" : ""}`}
+                : `$${fmt(plan.structural, 2)}${structuralOutside ? " · outside chart" : ""}`}
             </b>
           </span>
           <span className={plan.tactical == null ? "disabled" : ""}>
             <small>Tactical stop</small>
             <b>
               {plan.tactical == null
-                ? "Nije definiran — sizing onemogućen"
+                ? "Not defined — sizing disabled"
                 : `$${fmt(plan.tactical, 2)}`}
             </b>
           </span>
@@ -3024,6 +2895,7 @@ function Detail({
         )}
       </section>}
       {scannerMode === "bottom-fishing" && <PositionSizer stock={stock} />}
+      {scannerMode === "bottom-fishing" && <BottomSetupDetail stock={stock} />}
       <div className="dv-chartcontrols">
         <div>
           {(["Price", "RS", "Volume"] as ChartMode[]).map((x) => (
@@ -3212,6 +3084,27 @@ function K({ l, v, d }: { l: string; v: string; d?: number }) {
       )}
     </span>
   );
+}
+
+function BottomSetupDetail({stock}:{stock:Stock}){
+  const tags=new Set([...(stock.setupTags??[]),...(stock.setupNames??[]),stock.primarySetup,stock.setup].filter(Boolean).map(value=>String(value)))
+  const cards=[
+    {id:'accumulation_base',title:'Accumulation',values:[['Score',stock.accumulationScore],['Base',stock.baseScore],['RVOL',stock.volumeRatio]]},
+    {id:'crash_base_stage1',title:'Crash Base',values:[['Score',stock.crashBaseScore],['Stage',stock.stage],['200D distance',stock.distance200]]},
+    {id:'rwb_squeeze_thrust',title:'RWB',values:[['Structure',stock.structureScore],['RS rating',stock.rsRank],['Entry risk %',stock.entryRiskPct]]},
+    {id:'ema_stack_launch',title:'EMA Stack',values:[['Launch score',stock.emaStackLaunchScore],['20D change %',stock.change20d],['RVOL',stock.volumeRatio]]},
+    {id:'ma_cluster_volume_breakout',title:'MA Cluster',values:[['Cluster score',stock.maClusterScore],['Compression %',stock.smaCompressionPct],['RVOL',stock.volumeRatio]]},
+    {id:'long_base_launch',title:'Long Base',values:[['Long-base score',stock.longBaseScore],['Base weeks',stock.baseWeeks],['Base depth %',stock.baseDepthPct]]},
+    {id:'weinstein',title:'Stage / Weinstein',values:[['Stage',stock.stage],['Substage',stock.stageName],['30W distance %',stock.distance30w]]},
+  ].filter(card=>tags.has(card.id)||card.id==='weinstein')
+  const plan=tradePlanOf(stock),triggerDistance=plan.trigger&&Number.isFinite(stock.price)?(stock.price-plan.trigger)/plan.trigger*100:null
+  return <section className="bottom-setup-detail">
+    <header><div><b>SETUP LENSES</b><small>Source detector evidence; no ranking changes.</small></div><span>{cards.length} matched</span></header>
+    <div className="bottom-setup-grid">
+      <article className="ready"><b>Trade readiness</b><dl><div><dt>Status</dt><dd>{plan.status.replaceAll('_',' ')}</dd></div><div><dt>Trigger state</dt><dd>{String(stock.tradePlan?.triggerState??stock.tradePlan?.trigger_state??'—').replaceAll('_',' ')}</dd></div><div><dt>To trigger</dt><dd>{triggerDistance==null?'—':signed(triggerDistance,1)}</dd></div></dl></article>
+      {cards.map(card=><article key={card.id}><b>{card.title}</b><dl>{card.values.map(([label,value])=><div key={String(label)}><dt>{label}</dt><dd>{typeof value==='number'?fmt(value,1):String(value??'—')}</dd></div>)}</dl></article>)}
+    </div>
+  </section>
 }
 
 function HistoryView({ state }: { state: RowsLoadState<ScanHistoryItemV1> }) {

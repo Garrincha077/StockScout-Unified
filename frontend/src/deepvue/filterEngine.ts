@@ -12,7 +12,7 @@ export type ScreenState={
   query:string
   pageSize:number
 }
-export type FieldDef={id:string;label:string;kind:'number'|'text'|'boolean';defaultOp:RuleOp;placeholder?:string}
+export type FieldDef={id:string;label:string;kind:'number'|'text'|'boolean';defaultOp:RuleOp;placeholder?:string;group?:string}
 
 export function stockScoutFocusBlend(stock:Record<string,unknown>){
   const value=stock.focusBlend??stock.focus_blend??stock.score
@@ -244,22 +244,24 @@ export const opsByKind={
 }
 
 export const uid=()=>Math.random().toString(36).slice(2,9)
-export const makeRule=(field='rsRank'):Rule=>{
-  const def=fieldDefs.find(x=>x.id===field)||fieldDefs[0]
+export const makeRule=(field='rsRank',definitions:FieldDef[]=fieldDefs):Rule=>{
+  const def=definitions.find(x=>x.id===field)||definitions[0]
   return {id:uid(),field:def.id,op:def.defaultOp,value:''}
 }
 export const makeGroup=(logic:Logic='ALL',rules:Rule[]=[makeRule()]):RuleGroup=>({id:uid(),logic,rules})
 
-const scalar=(stock:any,field:string)=>{
+const snake=(value:string)=>value.replace(/[A-Z]/g,letter=>`_${letter.toLowerCase()}`)
+const camel=(value:string)=>value.replace(/_([a-z0-9])/g,(_,letter:string)=>letter.toUpperCase())
+export const fieldValue=(stock:any,field:string)=>{
   if(field==='focusBlend')return stockScoutFocusBlend(stock)
   if(field==='opportunityScore')return stock.opportunityScore??stock.emergingLeaderScore??stock.score
-  return stock[field]
+  return stock[field]??stock[field.includes('_')?camel(field):snake(field)]
 }
 const textValue=(value:any)=>Array.isArray(value)?value.join(' | '):String(value??'')
 const asNumber=(value:any)=>{const n=Number(value);return Number.isFinite(n)?n:NaN}
 
-export function validateRule(rule:Rule):string|null{
-  const def=fieldDefs.find(field=>field.id===rule.field)
+export function validateRule(rule:Rule,definitions:FieldDef[]=fieldDefs):string|null{
+  const def=definitions.find(field=>field.id===rule.field)
   if(!def)return'Unknown field'
   if(def.kind==='boolean')return null
   const input=rule.value.trim()
@@ -274,17 +276,17 @@ export function validateRule(rule:Rule):string|null{
   return null
 }
 
-export function invalidRules(groups:RuleGroup[]){
-  return groups.flatMap(group=>group.rules.filter(rule=>validateRule(rule)!==null))
+export function invalidRules(groups:RuleGroup[],definitions:FieldDef[]=fieldDefs){
+  return groups.flatMap(group=>group.rules.filter(rule=>validateRule(rule,definitions)!==null))
 }
 
-export function matchesRule(stock:any,rule:Rule):boolean{
-  if(validateRule(rule))return false
-  const raw=scalar(stock,rule.field)
+export function matchesRule(stock:any,rule:Rule,definitions:FieldDef[]=fieldDefs):boolean{
+  if(validateRule(rule,definitions))return false
+  const raw=fieldValue(stock,rule.field)
   if(rule.op==='true')return raw===true
   if(rule.op==='false')return raw===false
   if(rule.op==='contains')return textValue(raw).toLowerCase().includes(rule.value.trim().toLowerCase())
-  const def=fieldDefs.find(x=>x.id===rule.field)
+  const def=definitions.find(x=>x.id===rule.field)
   if(def?.kind==='text'){
     const left=textValue(raw).toLowerCase(),right=rule.value.trim().toLowerCase()
     return rule.op==='!='?left!==right:left===right
@@ -308,10 +310,10 @@ export function matchesRule(stock:any,rule:Rule):boolean{
   return left===right
 }
 
-export function matchesGroups(stock:any,groups:RuleGroup[],rootLogic:Logic):boolean{
-  const active=groups.map(group=>({...group,rules:group.rules.filter(rule=>!validateRule(rule))})).filter(group=>group.rules.length)
+export function matchesGroups(stock:any,groups:RuleGroup[],rootLogic:Logic,definitions:FieldDef[]=fieldDefs):boolean{
+  const active=groups.map(group=>({...group,rules:group.rules.filter(rule=>!validateRule(rule,definitions))})).filter(group=>group.rules.length)
   if(!active.length)return true
-  const groupMatch=(g:RuleGroup)=>g.logic==='ALL'?g.rules.every(r=>matchesRule(stock,r)):g.rules.some(r=>matchesRule(stock,r))
+  const groupMatch=(g:RuleGroup)=>g.logic==='ALL'?g.rules.every(r=>matchesRule(stock,r,definitions)):g.rules.some(r=>matchesRule(stock,r,definitions))
   return rootLogic==='ALL'?active.every(groupMatch):active.some(groupMatch)
 }
 

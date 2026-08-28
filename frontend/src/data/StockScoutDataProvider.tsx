@@ -141,7 +141,7 @@ type DataContextValue={
   loadLegacyIndex:()=>Promise<LegacyIndex>
   loadLegacyDetail:(ticker:string,force?:boolean)=>Promise<StockScoutRow|null>
   loadChart:(ticker:string,retry?:boolean)=>Promise<ChartState>
-  loadContextAsset:<T>(kind:'factorRegime'|'gmliContext',retry?:boolean)=>Promise<T>
+  loadContextAsset:<T>(kind:'factorRegime'|'gmliContext'|'bottomScreener',retry?:boolean)=>Promise<T>
   loadOptional:<T>(path:string)=>Promise<T|null>
 }
 
@@ -297,8 +297,10 @@ export function StockScoutDataProvider({children}:{children:ReactNode}){
     }catch(nextError){return{status:'error',rows:[],error:String(nextError)}}
   },[manifest,core,mode])
 
-  const loadContextAsset=useCallback(async<T,>(kind:'factorRegime'|'gmliContext',retry=false):Promise<T>=>{
-    if(mode!=='next'||!manifest||!isManifestV1(manifest))throw new Error(`${kind} is available only in Next`)
+  const loadContextAsset=useCallback(async<T,>(kind:'factorRegime'|'gmliContext'|'bottomScreener',retry=false):Promise<T>=>{
+    const expectedMode=kind==='bottomScreener'?'bottom-fishing':'next'
+    if(mode!==expectedMode)throw new Error(`${kind} is available only in ${expectedMode==='next'?'Next':'Bottom Fishing'}`)
+    if(!manifest||!isManifestV1(manifest))throw new Error(`${kind} manifest is still loading`)
     const asset=manifest.assets[kind]
     if(!asset)throw new Error(`${kind} is not published for this run`)
     const key=`context:${kind}:${asset.sha256}`
@@ -312,10 +314,12 @@ export function StockScoutDataProvider({children}:{children:ReactNode}){
         if(bytes.byteLength!==asset.bytes)throw new Error(`${kind} byte count does not match its manifest`)
         if(await sha256Hex(bytes)!==asset.sha256)throw new Error(`${kind} hash does not match its manifest`)
         const payload=JSON.parse(new TextDecoder().decode(bytes)) as Record<string,unknown>
-        if(!payload||typeof payload!=='object'||payload.schemaVersion!==1)throw new Error(`${kind} schema is unsupported`)
+        const expectedSchema=kind==='bottomScreener'?'stockscout-unified/bottom-screener-v1':1
+        if(!payload||typeof payload!=='object'||payload.schemaVersion!==expectedSchema)throw new Error(`${kind} schema is unsupported`)
         if(kind==='factorRegime'&&(!Array.isArray(payload.factors)||payload.factors.length!==6))throw new Error('Factor regime must contain six factors')
         const contract=payload.consumerContract as Record<string,unknown>|undefined
         if(kind==='gmliContext'&&(payload.status!=='OK'||contract?.mode!=='READ_ONLY_SIDECAR'||contract?.mutatesStockScoutScoring!==false))throw new Error('GMLI read-only contract is invalid')
+        if(kind==='bottomScreener'&&(!Array.isArray(payload.rows)||payload.runId!==manifest.runId||payload.priceBasis!=='split_only'||!Array.isArray(payload.fields)||payload.fields.length<60))throw new Error('Bottom screener contract is invalid')
         return payload as T
       })
       .catch(error=>{contextAssetCache.delete(key);throw error})

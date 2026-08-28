@@ -76,6 +76,7 @@ export type ScanManifestV1={
     charts?:AssetDescriptor
     factorRegime?:AssetDescriptor
     gmliContext?:AssetDescriptor
+    bottomScreener?:AssetDescriptor
   }
 }
 
@@ -214,6 +215,7 @@ export function parseManifest(value:unknown):StockScoutManifest{
         history:requiredAsset(assets.history,'history'),
         ...(assets.factorRegime?{factorRegime:requiredAsset(assets.factorRegime,'factorRegime')}:{ }),
         ...(assets.gmliContext?{gmliContext:requiredAsset(assets.gmliContext,'gmliContext')}:{ }),
+        ...(assets.bottomScreener?{bottomScreener:requiredAsset(assets.bottomScreener,'bottomScreener')}:{ }),
       },
     } as ScanManifestV1
   }

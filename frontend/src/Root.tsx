@@ -40,18 +40,28 @@ export default function Root(){
     selectTicker(ticker)
     setView('screener')
   }
+  const openGroup=(type:'sector'|'industry',name:string)=>{
+    const url=new URL(location.href)
+    url.searchParams.set('mode','next')
+    url.searchParams.set('view','screener')
+    url.searchParams.set('groupType',type)
+    url.searchParams.set('group',name)
+    history.replaceState(history.state,'',`${url.pathname}${url.search}${url.hash}`)
+    setViewState('screener')
+  }
 
   const selectMode=(nextMode:typeof mode)=>{
     const url=new URL(location.href)
     if(nextMode==='next')url.searchParams.set('view','screener')
     else url.searchParams.delete('view')
+    url.searchParams.delete('groupType')
+    url.searchParams.delete('group')
     history.replaceState(history.state,'',`${url.pathname}${url.search}${url.hash}`)
     setViewState('screener')
     setMode(nextMode)
   }
 
   return <div className={`unified-app mode-${mode}`}>
-    <OwnerAccess/>
     <header className="mode-header">
       <div className="mode-brand">
         <b>StockScout Unified</b>
@@ -69,12 +79,13 @@ export default function Root(){
         <span>{manifest?.sessionDate??'No scan'}</span>
         <span>{definition.priceBasis==='split_only'?'Split-only':'Adjusted'}</span>
       </div>
+      <OwnerAccess/>
     </header>
     {mode==='next'?<nav className="next-view-nav" aria-label="Next workspace">
       {(['screener','groups','factors','gmli'] as const).map(item=><button key={item} className={view===item?'active':''} aria-current={view===item?'page':undefined} onClick={()=>setView(item)}>{item==='gmli'?'GMLI':item[0].toUpperCase()+item.slice(1)}</button>)}
     </nav>:null}
     <Suspense fallback={<div className="unified-view-loading" role="status">Loading workspace…</div>}>
-      {mode==='ryan-original'?<RyanOriginalDashboard/>:mode!=='next'||view==='screener'?<DeepVueTerminal/>:view==='groups'?<GroupsPage onOpenTicker={openTicker}/>:view==='factors'?<FactorRegimePage/>:<GmliContextPage/>}
+      {mode==='ryan-original'?<RyanOriginalDashboard/>:mode!=='next'||view==='screener'?<DeepVueTerminal key={mode}/>:view==='groups'?<GroupsPage onOpenTicker={openTicker} onOpenGroup={openGroup}/>:view==='factors'?<FactorRegimePage/>:<GmliContextPage/>}
     </Suspense>
   </div>
 }

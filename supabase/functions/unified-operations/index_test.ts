@@ -1,4 +1,5 @@
 import{drawingTriggered,priceBar,triggered,type AlertRow}from'./index.ts'
+import{evaluateDrawingGeometry,lineValueAt,rearmAfterClear}from'../_shared/chartGeometry.ts'
 
 function assert(value:unknown,message:string){if(!value)throw new Error(message)}
 
@@ -25,4 +26,27 @@ Deno.test('drawing alerts support projected lines, fibs and box transitions',()=
   assert(drawingTriggered({kind:'drawing',operator:'crossing_up',type:'horizontal',points:[{time:'2026-08-24',price:10},{time:'2026-08-25',price:10}]},bars),'horizontal crossing did not fire')
   assert(drawingTriggered({kind:'drawing',operator:'touch',type:'fib',points:[{time:'2026-08-24',price:8},{time:'2026-08-25',price:12}],fibLevels:[.5]},bars),'fib touch did not fire')
   assert(drawingTriggered({kind:'drawing',operator:'entering',type:'rectangle',points:[{time:'2026-08-24',price:10},{time:'2026-08-25',price:12}]},bars),'box entry did not fire')
+})
+
+Deno.test('UTC geometry is interval independent and uses previous and current sloped levels',()=>{
+  const drawing={type:'trendline' as const,extend:'both' as const,points:[{time:'2026-08-20',price:8},{time:'2026-08-24',price:12}]}
+  assert(lineValueAt(drawing,'2026-08-22')===10,'calendar projection changed between chart intervals')
+  const result=evaluateDrawingGeometry(drawing,{kind:'line'},'crossing_up',[
+    {time:'2026-08-23',open:10,high:12,low:9,close:10.5},
+    {time:'2026-08-25',open:12,high:14,low:11,close:13.5},
+  ])
+  assert(result.previousLevel===11&&result.currentLevel===13,'sloped levels were not evaluated at both bars')
+  assert(result.condition,'sloped crossing did not fire')
+})
+
+Deno.test('ray waits for its UTC anchor and linked drawings do not require a candidate row',()=>{
+  const payload={kind:'drawing',condition:'touch',target:{kind:'line'},type:'ray',extend:'right',points:[{time:'2026-08-26',price:10},{time:'2026-08-27',price:11}]}
+  assert(!drawingTriggered(payload,bars),'ray fired before its first anchor')
+  const horizontal={kind:'drawing',operator:'crossing_up',type:'horizontal',points:[{time:'2026-08-20',price:10},{time:'2026-08-21',price:10}]}
+  assert(triggered(alert(horizontal),undefined,bars),'drawing alert incorrectly required a screener candidate')
+})
+
+Deno.test('rearm fires once per continuous episode and rearms only after clear',()=>{
+  const first=rearmAfterClear(true,true),repeat=rearmAfterClear(first.armed,true),clear=rearmAfterClear(repeat.armed,false),again=rearmAfterClear(clear.armed,true)
+  assert(first.triggered&&!repeat.triggered&&!clear.triggered&&again.triggered,'rearm state machine emitted duplicates or failed to rearm')
 })
