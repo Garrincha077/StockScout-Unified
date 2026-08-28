@@ -5,7 +5,7 @@ from pathlib import Path
 from stockscout_eod.deployment import verify_pages_activation
 from stockscout_eod.jsonio import write_json
 
-DEPLOY_PAGES = "actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e"
+DEPLOY_PAGES = "actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128"
 REUSABLE_DEPLOY = "uses: ./.github/workflows/deploy-pages.yml"
 
 
