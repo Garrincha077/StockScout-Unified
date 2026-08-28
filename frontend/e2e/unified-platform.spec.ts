@@ -91,6 +91,9 @@ test('three modes stay isolated and remain usable in mobile and desktop views',a
     expect(panelBox?.height??0).toBeGreaterThan(300)
     expect(contentBox?.height??0).toBeGreaterThan((panelBox?.height??0)-4)
     expect(canvasBox?.height??0).toBeGreaterThan(250)
+    const dockBox=await page.locator('.chart-mobile-dock').boundingBox()
+    const chartBox=await page.locator('.drawing-chart-shell.owner-tools>.dv-chart').boundingBox()
+    if(dockBox&&chartBox)expect(dockBox.y).toBeGreaterThanOrEqual(chartBox.y+chartBox.height-2)
   }else await expect(page.locator('.chart-drawing-toolbar')).toBeVisible()
   expect(await page.evaluate(()=>document.body.scrollWidth<=window.innerWidth)).toBe(true)
 

@@ -91,7 +91,15 @@
 /* Phone drawing controls stay off the price action until explicitly opened. */
 @media (max-width:760px){
   .layout-cockpit .chart-drawing-toolbar,.layout-cockpit .drawing-inspector{display:none!important}
-  .layout-cockpit .chart-mobile-dock{position:absolute;right:8px;bottom:8px;z-index:22;display:flex;gap:4px;padding:4px;border:1px solid #294861;border-radius:10px;background:#06111ee8;box-shadow:0 8px 28px #0009;pointer-events:auto}
+  /* Keep the phone action dock in a reserved strip below price action. The
+     previous absolute dock sat on top of the last candles and made the chart
+     look truncated on small screens. */
+  .layout-cockpit .drawing-chart-shell.owner-tools{box-sizing:border-box;padding-bottom:58px;overflow:visible}
+  .layout-cockpit .drawing-chart-shell.owner-tools>.dv-chart{height:calc(100% - 58px)!important}
+  .layout-cockpit .drawing-chart-shell.owner-tools .chart-drawing-layer{bottom:58px!important}
+  .layout-cockpit .drawing-chart-shell.owner-tools .chart-status-row{bottom:64px!important}
+  .layout-cockpit .drawing-chart-shell.owner-tools .chart-drawing-message{bottom:66px!important}
+  .layout-cockpit .chart-mobile-dock{position:absolute;right:8px;bottom:0;z-index:22;display:flex;gap:4px;padding:4px;border:1px solid #294861;border-radius:10px;background:#06111ee8;box-shadow:0 8px 28px #0009;pointer-events:auto}
   .layout-cockpit .chart-mobile-dock button{position:relative;display:grid;min-width:58px;min-height:46px;place-items:center;gap:1px;padding:4px 7px;border:1px solid transparent;border-radius:7px;background:transparent;color:#a9bdcf;font-size:16px;cursor:pointer}
   .layout-cockpit .chart-mobile-dock button span{font-size:8px}.layout-cockpit .chart-mobile-dock button b{position:absolute;top:2px;right:4px;display:grid;min-width:16px;height:16px;place-items:center;border-radius:9px;background:#216b4d;color:#b4ffd0;font-size:8px}
   .layout-cockpit .chart-mobile-dock button.active{border-color:#2c8a61;background:#0d3023;color:#77efaa}.layout-cockpit .chart-mobile-dock .chart-owner-cta{min-width:128px;font-size:10px!important}
