@@ -18,7 +18,7 @@ function initialView():NextView{
 }
 
 export default function Root(){
-  const{mode,definition,setMode}=useMode()
+  const{mode,definition,setMode,layout,setLayout}=useMode()
   const{selectTicker,manifest}=useStockScoutData()
   const[view,setViewState]=useState<NextView>(initialView)
 
@@ -61,7 +61,7 @@ export default function Root(){
     setMode(nextMode)
   }
 
-  return <div className={`unified-app mode-${mode}`}>
+  return <div className={`unified-app mode-${mode} layout-${layout}`}>
     <header className="mode-header">
       <div className="mode-brand">
         <b>StockScout Unified</b>
@@ -75,10 +75,12 @@ export default function Root(){
           onClick={()=>selectMode(item.id)}
         >{item.label}</button>)}
       </nav>
+      <label className="mode-select-label">Mode<select className="mode-select" aria-label="Scanner mode" value={mode} onChange={event=>selectMode(event.target.value as typeof mode)}>{MODES.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
       <div className="mode-meta">
         <span>{manifest?.sessionDate??'No scan'}</span>
         <span>{definition.priceBasis==='split_only'?'Split-only':'Adjusted'}</span>
       </div>
+      <button className="layout-mode-toggle" type="button" onClick={()=>setLayout(layout==='cockpit'?'classic':'cockpit')} title={layout==='cockpit'?'Return to the previous layout':'Use the new TradingView-style layout'}>{layout==='cockpit'?'Classic layout':'Cockpit layout'}</button>
       <OwnerAccess/>
     </header>
     {mode==='next'?<nav className="next-view-nav" aria-label="Next workspace">

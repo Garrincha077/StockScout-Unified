@@ -328,6 +328,10 @@ function SellTable({
   );
 }
 
+function defaultRyanEvidenceOpen() {
+  return typeof window === "undefined" || !window.matchMedia("(max-width: 720px)").matches;
+}
+
 function DetailPanel({
   row,
   loading,
@@ -339,6 +343,7 @@ function DetailPanel({
   error: string;
   onRetry: () => void;
 }) {
+  const [evidenceOpen, setEvidenceOpen] = useState(defaultRyanEvidenceOpen);
   const engine = originalEngine(row);
   const buy = branch(engine, "buy");
   const sell = branch(engine, "sell");
@@ -379,30 +384,42 @@ function DetailPanel({
                 <div><span>R/R</span><b>{fmt(buy.riskReward ?? row.originalRR, 1)}:1</b></div>
                 <div><span>Sell severity</span><b>{String(sell.severity ?? row.originalSellSeverity ?? "none")}</b></div>
               </section>
-              <section className="ryan-detail-section">
-                <h3>BUY SCORE ANATOMY</h3>
-                <SourceValues value={buy.components} />
-              </section>
-              <section className="ryan-detail-section">
-                <h3>SELL / RISK ENGINE</h3>
-                <SourceValues value={sell} />
-              </section>
-              <SourceSection title="Source inputs" value={engine.sourceInputs} open />
-              <SourceSection title="Source outputs" value={engine.sourceOutputs} open />
-              <SourceSection title="Phase information" value={phase} open />
-              <SourceSection title="Minervini trend template" value={engine.minervini} />
-              <SourceSection title="VCP anatomy" value={engine.vcp} />
-              <SourceSection title="Breakout / volume" value={engine.breakout} />
-              <SourceSection title="Complete BUY details" value={buy.allDetails} />
-              <SourceSection title="Complete SELL details" value={sell.allDetails} />
-              <section className="ryan-detail-section">
-                <h3>ALL SOURCE REASONS</h3>
-                <div className="ryan-reason-columns">
-                  <div><strong>BUY</strong><SignalReasons row={row} tab="buy" /></div>
-                  <div><strong>SELL</strong><SignalReasons row={row} tab="sell" /></div>
+              <details
+                className="ryan-evidence-drawer"
+                open={evidenceOpen}
+                onToggle={(event) => setEvidenceOpen(event.currentTarget.open)}
+              >
+                <summary>
+                  <span>Source evidence</span>
+                  <small>Original score anatomy, engine inputs and reasons</small>
+                </summary>
+                <div className="ryan-evidence-drawer-body">
+                  <section className="ryan-detail-section">
+                    <h3>BUY SCORE ANATOMY</h3>
+                    <SourceValues value={buy.components} />
+                  </section>
+                  <section className="ryan-detail-section">
+                    <h3>SELL / RISK ENGINE</h3>
+                    <SourceValues value={sell} />
+                  </section>
+                  <SourceSection title="Source inputs" value={engine.sourceInputs} />
+                  <SourceSection title="Source outputs" value={engine.sourceOutputs} />
+                  <SourceSection title="Phase information" value={phase} />
+                  <SourceSection title="Minervini trend template" value={engine.minervini} />
+                  <SourceSection title="VCP anatomy" value={engine.vcp} />
+                  <SourceSection title="Breakout / volume" value={engine.breakout} />
+                  <SourceSection title="Complete BUY details" value={buy.allDetails} />
+                  <SourceSection title="Complete SELL details" value={sell.allDetails} />
+                  <section className="ryan-detail-section">
+                    <h3>ALL SOURCE REASONS</h3>
+                    <div className="ryan-reason-columns">
+                      <div><strong>BUY</strong><SignalReasons row={row} tab="buy" /></div>
+                      <div><strong>SELL</strong><SignalReasons row={row} tab="sell" /></div>
+                    </div>
+                  </section>
+                  <footer className="ryan-detail-footer">Model: {String(engine.model || "unknown")} · source outputs are immutable and read-only.</footer>
                 </div>
-              </section>
-              <footer className="ryan-detail-footer">Model: {String(engine.model || "unknown")} · source outputs are immutable and read-only.</footer>
+              </details>
             </div>
           ) : null}
         </>
@@ -617,7 +634,7 @@ export default function RyanOriginalDashboard() {
             </div>
           </footer>
         </div>
-        <DetailPanel row={detailRow} loading={detailLoading} error={detailError} onRetry={() => setDetailAttempt((value) => value + 1)} />
+        <DetailPanel key={detailRow?.ticker ?? "empty"} row={detailRow} loading={detailLoading} error={detailError} onRetry={() => setDetailAttempt((value) => value + 1)} />
       </ResizableWorkspace>
     </main>
   );

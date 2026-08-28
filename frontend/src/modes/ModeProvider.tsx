@@ -1,6 +1,7 @@
 import {createContext,useCallback,useContext,useMemo,useState,type ReactNode} from 'react'
 
 export type ModeId='bottom-fishing'|'next'|'ryan-original'
+export type LayoutMode='cockpit'|'classic'
 
 export type ModeDefinition={
   id:ModeId
@@ -16,6 +17,7 @@ export const MODES:readonly ModeDefinition[]=[
 ] as const
 
 const MODE_KEY='stockscout-unified-mode-v1'
+const LAYOUT_KEY='stockscout-unified-layout-v1'
 const MODE_IDS=new Set<ModeId>(MODES.map(mode=>mode.id))
 
 export function isModeId(value:unknown):value is ModeId{
@@ -32,11 +34,12 @@ function initialMode():ModeId{
   return'bottom-fishing'
 }
 
-type ModeContextValue={mode:ModeId;definition:ModeDefinition;setMode:(mode:ModeId)=>void}
+type ModeContextValue={mode:ModeId;definition:ModeDefinition;setMode:(mode:ModeId)=>void;layout:LayoutMode;setLayout:(layout:LayoutMode)=>void}
 const ModeContext=createContext<ModeContextValue|null>(null)
 
 export function ModeProvider({children}:{children:ReactNode}){
   const[mode,setModeState]=useState<ModeId>(initialMode)
+  const[layout,setLayoutState]=useState<LayoutMode>(()=>{try{return localStorage.getItem(LAYOUT_KEY)==='classic'?'classic':'cockpit'}catch{return'cockpit'}})
   const setMode=useCallback((next:ModeId)=>{
     setModeState(next)
     try{localStorage.setItem(MODE_KEY,next)}catch{}
@@ -45,8 +48,9 @@ export function ModeProvider({children}:{children:ReactNode}){
     url.searchParams.delete('run')
     history.replaceState(history.state,'',`${url.pathname}${url.search}${url.hash}`)
   },[])
+  const setLayout=useCallback((next:LayoutMode)=>{setLayoutState(next);try{localStorage.setItem(LAYOUT_KEY,next)}catch{}},[])
   const definition=MODES.find(candidate=>candidate.id===mode)??MODES[0]
-  const value=useMemo(()=>({mode,definition,setMode}),[mode,definition,setMode])
+  const value=useMemo(()=>({mode,definition,setMode,layout,setLayout}),[mode,definition,setMode,layout,setLayout])
   return<ModeContext.Provider value={value}>{children}</ModeContext.Provider>
 }
 

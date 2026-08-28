@@ -172,3 +172,32 @@
 - Extended the chart renderer into the visible future time-scale margin using the same UTC-day geometry as the EOD evaluator, so projected trendlines no longer appear to stop at the last market bar.
 - New trendlines now follow the familiar forward-ray default. The drawing inspector exposes explicit Segment, Extend right, and Extend both controls and states that daily EOD alerts use the same projection.
 - Existing v1 and v2 drawings retain their stored extension semantics. The live owner MEI trendline and its linked alert were verified read-only in Supabase; no alert was evaluated or delivered during this change.
+
+## 2026-08-28 — Reversible TradingView-style cockpit QA
+
+- Added a versioned, persistent Cockpit/Classic layout switch and preserved the
+  pre-change tree as the `pre-tradingview-cockpit-20260828` tag and
+  `rollback/pre-tradingview-cockpit-20260828` branch. The rollback is immediate
+  in the UI and does not alter scan data, scoring, rankings or owner records.
+- Aligned the desktop screener table and chart/detail pane to one viewport-height
+  workspace, retained accessible splitters, moved detail evidence and Bottom trade
+  setup into focused tabs, removed empty panel space and added useful empty states.
+- Reworked narrow-screen navigation into a native mode selector, one Next context
+  row and a five-item bottom bar with a More menu. Owner access is now part of the
+  header, touch targets remain at least 44 px, and 320/390/768 px audits found no
+  page-level horizontal overflow or sticky-header overlap.
+- Added on-demand mobile Draw, Layers and Alert sheets so persistent drawing tools
+  no longer cover the chart. Drawing alerts remain primary, price-only alerts stay
+  under Advanced, and trendline projection remains explicitly selectable.
+- Made Grid chart loading viewport-aware, increased future chart space for projected
+  drawings, and changed Ryan mobile evidence into a collapsed drawer while keeping
+  its chart first and its ticker table independently scrollable. Ryan remains
+  read-only with Open in Next.
+- Added a development-only proxy to the currently published immutable data so local
+  visual QA exercises real Unified assets without checking generated market data
+  into the repository.
+- Verification: 67 frontend unit/contract tests and the production build passed;
+  all 6 Playwright fixture tests passed in Pixel 5 and 1440 px desktop profiles.
+  Real-data browser QA covered Next Screener/Groups/Factors, Bottom Fishing and Ryan
+  at 320, 390, 768 and 1440 px. The GMLI fixture passed in Playwright; the external
+  Browser QA extension itself blocks direct raw GMLI JSON navigation.

@@ -9,6 +9,11 @@ export default defineConfig(({mode})=>{
   return{
     plugins:[react()],
     base:'/StockScout-Unified/',
+    server:{
+      // The checked-in frontend intentionally has no generated market assets.
+      // Local UI work therefore reads the currently published immutable run.
+      proxy:{'/StockScout-Unified/data':{target:'https://garrincha077.github.io',changeOrigin:true}},
+    },
     build:{
       outDir:'dist',
       sourcemap:false,
