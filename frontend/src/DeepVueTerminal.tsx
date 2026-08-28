@@ -74,6 +74,13 @@ type Page =
   | "Watchlist"
   | "Market"
   | "Owner";
+
+const PRIMARY_PAGES = new Set<Page>([
+  "Screener",
+  "Grid",
+  "Watchlist",
+  "Market",
+]);
 type Interval = "D" | "W";
 type Range = "3M" | "6M" | "1Y" | "2Y" | "5Y";
 type ChartMode = "Price" | "RS" | "Volume";
@@ -1602,6 +1609,24 @@ function DeepVueTerminal() {
     "Market",
     ...(owner.user ? ["Owner" as const] : []),
   ];
+  const extraPages = navPages.filter((item) => !PRIMARY_PAGES.has(item));
+  const navButton = (p: Page) => (
+    <button
+      key={p}
+      data-page={p.toLowerCase()}
+      className={`${page === p ? "active" : ""} ${PRIMARY_PAGES.has(p) ? "dv-nav-primary" : "dv-nav-extra"}`}
+      onClick={() => setPage(p)}
+    >
+      {p}
+      {p === "Changes" && daily.changed
+        ? ` ${daily.changed}`
+        : p === "Excluded" && manifest && isManifestV1(manifest)
+          ? ` ${manifest.counts.excluded}`
+          : p === "History" && historyState.rows.length
+            ? ` ${historyState.rows.length}`
+            : ""}
+    </button>
+  );
   return (
     <div className="dv-app">
       <header className="dv-top">
@@ -1613,22 +1638,11 @@ function DeepVueTerminal() {
           </small>
         </div>
         <nav>
-          {navPages.map((p) => (
-            <button
-              key={p}
-              className={page === p ? "active" : ""}
-              onClick={() => setPage(p)}
-            >
-              {p}
-              {p === "Changes" && daily.changed
-                ? ` ${daily.changed}`
-                : p === "Excluded" && manifest && isManifestV1(manifest)
-                  ? ` ${manifest.counts.excluded}`
-                  : p === "History" && historyState.rows.length
-                    ? ` ${historyState.rows.length}`
-                    : ""}
-            </button>
-          ))}
+          {navPages.map(navButton)}
+          <details className="dv-more-nav">
+            <summary>More</summary>
+            <div>{extraPages.map(navButton)}</div>
+          </details>
         </nav>
         <div className={`dv-live ${ageH > 36 ? "stale" : ""}`}>
           <b>{regimeLabel}</b>
@@ -1961,6 +1975,15 @@ function DeepVueTerminal() {
                           ))}
                         </tr>
                       ))}
+                      {!table.getRowModel().rows.length && (
+                        <tr className="dv-empty-row">
+                          <td colSpan={Math.max(1, table.getVisibleLeafColumns().length)}>
+                            <b>{page === "Watchlist" ? "Your watchlist is empty" : page === "Excluded" ? "No rejected records in this run" : "No stocks match these filters"}</b>
+                            <span>{page === "Watchlist" ? "Star a ticker in Screener or Grid to keep it here." : page === "Excluded" ? "Every published candidate passed the current exclusion contract." : "Clear a filter or return to the canonical scan order."}</span>
+                            {page !== "Excluded" && <button type="button" onClick={() => { setQuery(""); setGroups([]); setRecipe("All"); }}>Reset filters</button>}
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -1996,6 +2019,7 @@ function DeepVueTerminal() {
               </div>
               {selectedFull && (
                 <Detail
+                  key={selectedFull.ticker}
                   stock={selectedFull}
                   chart={selectedChart}
                   retryChart={() => loadSelectedChart(true)}
@@ -2467,6 +2491,8 @@ function MiniCard({
   onClick: () => void;
 }) {
   const { mode } = useMode();
+  const cardRef = useRef<HTMLElement>(null);
+  const [visible, setVisible] = useState(false);
   const interval: Interval = range === "6M" || range === "1Y" ? "D" : "W";
   const [state, setState] = useState<ChartLoadState>({
       status: "loading",
@@ -2474,6 +2500,19 @@ function MiniCard({
     }),
     [attempt, setAttempt] = useState(0);
   useEffect(() => {
+    const node = cardRef.current;
+    if (!node || visible) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry?.isIntersecting) {
+        setVisible(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: "360px 0px" });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [visible]);
+  useEffect(() => {
+    if (!visible) return;
     let live = true;
     setState({ status: "loading", bars: [] });
     loadBars(stock.ticker, attempt > 0).then((next) => {
@@ -2482,9 +2521,10 @@ function MiniCard({
     return () => {
       live = false;
     };
-  }, [stock.ticker, loadBars, attempt]);
+  }, [stock.ticker, loadBars, attempt, visible]);
   return (
     <article
+      ref={cardRef}
       className={`dv-minicard ${selected ? "selected" : ""}`}
       onClick={onClick}
     >
@@ -2546,7 +2586,9 @@ function MiniCard({
           </span>
         )}
       </div>
-      {state.status === "ready" ? (
+      {!visible ? (
+        <div className="dv-miniload">Chart loads when visible</div>
+      ) : state.status === "ready" ? (
         <StockChart bars={state.bars} interval={interval} range={range} mini />
       ) : state.status === "loading" ? (
         <div className="dv-miniload">loading chart…</div>
@@ -2764,6 +2806,7 @@ function Detail({
   toggleWatch: () => void;
 }) {
   const { mode: scannerMode } = useMode();
+  const [detailSection, setDetailSection] = useState<"chart" | "plan" | "evidence">("chart");
   const plan = tradePlanOf(stock);
   const dims = [
     ["Structure", stock.structureScore],
@@ -2788,7 +2831,7 @@ function Detail({
       0.1,
     );
   return (
-    <aside className="dv-detail">
+    <aside className={`dv-detail section-${detailSection}`}>
       <div className="dv-detailhead">
         <button
           className={`dv-star big ${watched ? "on" : ""}`}
@@ -2824,6 +2867,11 @@ function Detail({
           <span>{signed(stock.change20d)} 20D</span>
         </div>
       </div>
+      <nav className="dv-detail-sections" aria-label="Ticker detail">
+        <button type="button" className={detailSection === "chart" ? "active" : ""} onClick={() => setDetailSection("chart")}>Chart</button>
+        {scannerMode === "bottom-fishing" && <button type="button" className={detailSection === "plan" ? "active" : ""} onClick={() => setDetailSection("plan")}>Plan &amp; setup</button>}
+        <button type="button" className={detailSection === "evidence" ? "active" : ""} onClick={() => setDetailSection("evidence")}>Evidence</button>
+      </nav>
       {(stock.changeLabels || []).length > 0 && (
         <div className="dv-todaybox">
           <b>CHANGED SINCE LAST SCAN</b>

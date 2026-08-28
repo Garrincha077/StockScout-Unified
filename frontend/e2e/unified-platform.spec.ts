@@ -56,6 +56,12 @@ async function installRoutes(page:Page){
   await page.route('**/data/validation-status.json*',route=>route.fulfill({status:404,body:''}))
 }
 
+async function chooseMode(page:Page,mode:Mode,label:string){
+  const mobileSelect=page.locator('.mode-select')
+  if(await mobileSelect.isVisible())await mobileSelect.selectOption(mode)
+  else await page.locator('.mode-header nav button').filter({hasText:label}).click()
+}
+
 test('three modes stay isolated and remain usable in mobile and desktop views',async({page})=>{
   await installRoutes(page)
   await page.goto(`/StockScout-Unified/ticker/AAA?run=${runId}&mode=bottom-fishing`)
@@ -64,8 +70,25 @@ test('three modes stay isolated and remain usable in mobile and desktop views',a
   await expect(page.locator('.trade-plan')).toContainText('Entry ready')
   await expect(page.locator('.dv-chart canvas').first()).toBeVisible()
   await expect(page.locator('.chart-drawing-toolbar')).toContainText(/Sign in to draw|Enable owner drawings/)
+  await expect(page.locator('.unified-app')).toHaveClass(/layout-cockpit/)
+  await page.locator('.layout-mode-toggle').click()
+  await expect(page.locator('.unified-app')).toHaveClass(/layout-classic/)
+  await expect(page.locator('.layout-mode-toggle')).toContainText('Cockpit layout')
+  await page.reload()
+  await expect(page.locator('.unified-app')).toHaveClass(/layout-classic/)
+  await page.locator('.layout-mode-toggle').click()
+  await expect(page.locator('.unified-app')).toHaveClass(/layout-cockpit/)
+  await page.reload()
+  await expect(page.locator('.unified-app')).toHaveClass(/layout-cockpit/)
 
-  await page.locator('.mode-header nav button').filter({hasText:'Next'}).click()
+  const initialViewport=page.viewportSize()
+  if((initialViewport?.width??0)<=760){
+    await expect(page.locator('.chart-drawing-toolbar')).toBeHidden()
+    await expect(page.locator('.chart-mobile-dock')).toBeVisible()
+  }else await expect(page.locator('.chart-drawing-toolbar')).toBeVisible()
+  expect(await page.evaluate(()=>document.body.scrollWidth<=window.innerWidth)).toBe(true)
+
+  await chooseMode(page,'next','Next')
   await expect(page.locator('.dv-detailhead')).toContainText('NEXT SCORE')
   await expect(page.locator('.dv-detailhead')).toContainText('96.0')
   await expect(page.locator('.trade-plan')).toHaveCount(0)
@@ -79,7 +102,7 @@ test('three modes stay isolated and remain usable in mobile and desktop views',a
   await page.locator('.next-view-nav button').filter({hasText:'GMLI'}).click()
   await expect(page.locator('.ctx-page')).toContainText('GMLI Context')
 
-  await page.locator('.mode-header nav button').filter({hasText:'Ryan Original'}).click()
+  await chooseMode(page,'ryan-original','Ryan Original')
   await expect(page.locator('.ryan-dashboard')).toContainText('Ryan Original')
   await expect(page.locator('.ryan-summary')).toContainText('Buy Signals')
   await expect(page.locator('.ryan-summary')).toContainText('Sell Signals')

@@ -1,0 +1,104 @@
+/* TradingView-style cockpit. Every material layout rule is scoped so the
+   header's Classic layout switch remains a real, instant rollback path. */
+.dv-more-nav,.dv-detail-sections,.chart-mobile-dock,.chart-mobile-sheet{display:none}
+
+.layout-cockpit{--ss-global-h:58px;--ss-context-h:46px}
+.layout-cockpit :is(button,a,input,select,summary):focus-visible{outline:2px solid #69bdf4;outline-offset:2px}
+.layout-cockpit .mode-header{min-height:var(--ss-global-h);padding-block:7px}
+.layout-cockpit .next-view-nav{min-height:var(--ss-context-h);padding-block:5px}
+
+/* One compact context bar, followed by a full-height two-pane workspace. */
+.layout-cockpit .dv-top{height:46px;padding:0 10px}
+.layout-cockpit .dv-brand{min-width:0;margin-right:8px}
+.layout-cockpit .dv-brand small{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.layout-cockpit .dv-top nav button{padding:0 9px;font-size:9px}
+.layout-cockpit .dv-screenbar{min-height:38px;padding:4px 10px}
+.layout-cockpit .dv-recipes{min-height:32px}
+.layout-cockpit .dv-recipes button{padding:7px 10px}
+.layout-cockpit .dv-sortbar{min-height:34px;padding:4px 8px}
+.layout-cockpit .dv-toolbar{min-height:40px;padding:4px 8px}
+.layout-cockpit .dv-work{height:calc(100dvh - 304px);min-height:520px;margin:6px auto;padding:0 6px}
+.layout-cockpit.mode-bottom-fishing .dv-work{height:calc(100dvh - 258px)}
+.layout-cockpit .dv-work>.dv-tablebox,.layout-cockpit .dv-work>.dv-detail{height:100%;min-height:0}
+.layout-cockpit .dv-tablebox{display:flex;flex-direction:column}
+.layout-cockpit .dv-tablewrap{height:auto;min-height:0;flex:1}
+.layout-cockpit .dv-detail{display:block;padding:0 10px 10px;overflow:auto;overscroll-behavior:contain}
+.layout-cockpit .dv-detailhead{position:sticky;top:0;z-index:12;min-height:56px;background:#08131ff2;backdrop-filter:blur(12px)}
+.layout-cockpit .dv-detail-sections{position:sticky;top:56px;z-index:12;display:flex;gap:4px;margin:0 -2px 6px;padding:5px 2px;border-bottom:1px solid #182b40;background:#08131ff2;backdrop-filter:blur(12px)}
+.layout-cockpit .dv-detail-sections button{min-height:32px;padding:0 10px;border:1px solid transparent;border-radius:7px;background:transparent;color:#7890a7;font-size:9px;font-weight:750;cursor:pointer}
+.layout-cockpit .dv-detail-sections button.active{border-color:#287d59;background:#0d3023;color:#76eda8}
+.layout-cockpit .dv-detail.section-chart :is(.dv-todaybox,.dv-tags,.trade-plan,.position-sizer,.bottom-setup-detail,.dv-kpis,.dv-dims,.dv-fundbox){display:none}
+.layout-cockpit .dv-detail.section-plan :is(.dv-todaybox,.dv-tags,.dv-chartcontrols,.dv-ma-note,.dv-chart-resizer,.dv-kpis,.dv-dims,.dv-fundbox){display:none}
+.layout-cockpit .dv-detail.section-evidence :is(.dv-chartcontrols,.dv-ma-note,.dv-chart-resizer,.trade-plan,.position-sizer,.bottom-setup-detail){display:none}
+.layout-cockpit .dv-chart-resizer{height:calc(100% - 190px);min-height:340px;max-height:none}
+.layout-cockpit .dv-chartcontrols{min-height:36px}
+.layout-cockpit .dv-empty-row td{height:280px!important;padding:30px!important;text-align:center;white-space:normal!important}
+.layout-cockpit .dv-empty-row b,.layout-cockpit .dv-empty-row span{display:block;margin:5px auto;max-width:420px}
+.layout-cockpit .dv-empty-row b{color:#dce9f4;font-size:15px}.layout-cockpit .dv-empty-row span{color:#758aa0;line-height:1.45}
+.layout-cockpit .dv-empty-row button{min-height:36px;margin-top:10px;padding:0 12px;border:1px solid #2b6d94;border-radius:7px;background:#0c2638;color:#c8e3f5;cursor:pointer}
+
+/* Keep the resizable cockpit until a true one-column viewport is needed. */
+@media (min-width:821px) and (max-width:1050px){
+  .layout-cockpit .ss-explicit-split{grid-template-columns:minmax(420px,1fr) 14px minmax(340px,var(--ss-secondary))!important;gap:0!important}
+  .layout-cockpit .ss-explicit-splitter{display:grid!important}
+  .layout-cockpit .ss-height-panel{height:var(--ss-panel-height)!important;min-height:260px}
+  .layout-cockpit .ss-height-content{height:calc(100% - 12px)}
+  .layout-cockpit .ss-height-content>*{height:100%;min-height:0}
+  .layout-cockpit .ss-height-splitter{display:grid}
+}
+
+/* Ryan remains read-only, but its chart and list now share the first screen. */
+.layout-cockpit .ryan-dashboard{padding:9px 12px}
+.layout-cockpit .ryan-hero{align-items:center;padding:0 0 7px}.layout-cockpit .ryan-hero h1{margin:2px 0;font-size:21px}.layout-cockpit .ryan-hero p{font-size:10px}
+.layout-cockpit .ryan-summary{display:flex;gap:6px;margin-bottom:7px;overflow-x:auto;scrollbar-width:none}.layout-cockpit .ryan-summary::-webkit-scrollbar{display:none}
+.layout-cockpit .ryan-summary-card{min-width:150px;min-height:54px;padding:8px 10px}.layout-cockpit .ryan-summary-card::after{display:none}.layout-cockpit .ryan-summary-card strong{display:inline-block;margin:4px 7px 0 0;font-size:19px}.layout-cockpit .ryan-summary-card small{display:inline;font-size:8px}
+.layout-cockpit .ryan-workspace{height:calc(100dvh - 204px);min-height:560px}.layout-cockpit .ryan-list-panel{min-height:0;height:100%}.layout-cockpit .ryan-detail{height:100%;max-height:none}
+
+@media (max-width:820px){
+  .layout-cockpit{--ss-global-h:56px}
+  .layout-cockpit .dv-work,.layout-cockpit.mode-bottom-fishing .dv-work{height:auto;min-height:0}
+  .layout-cockpit .dv-work>.dv-tablebox{height:auto;min-height:0}
+  .layout-cockpit .dv-tablewrap{flex:none;height:clamp(420px,58svh,620px)}
+  .layout-cockpit .dv-detail{order:-1;height:auto!important;max-height:none;overflow:visible}
+  .layout-cockpit .dv-detailhead{top:var(--ss-global-h)}
+  .layout-cockpit.mode-next .dv-detailhead{top:calc(var(--ss-global-h) + var(--ss-context-h))}
+  .layout-cockpit .dv-detail-sections{top:calc(var(--ss-global-h) + 54px)}
+  .layout-cockpit.mode-next .dv-detail-sections{top:calc(var(--ss-global-h) + var(--ss-context-h) + 54px)}
+  .layout-cockpit .dv-chart-resizer{height:clamp(360px,58svh,560px)!important;min-height:360px}
+  .layout-cockpit .ryan-workspace{height:auto;min-height:0;display:flex!important;flex-direction:column}.layout-cockpit .ryan-detail{order:-1;height:auto}.layout-cockpit .ryan-list-panel{height:clamp(520px,72svh,760px);min-height:520px;max-height:760px}.layout-cockpit .ryan-table-wrap{min-height:0;overflow:auto}
+}
+
+@media (max-width:760px){
+  .layout-cockpit .dv-top{position:relative!important;top:auto!important;height:42px!important;min-height:42px!important;padding:0 7px!important}
+  .layout-cockpit .dv-brand{display:none!important}.layout-cockpit .dv-live{width:100%;justify-content:space-between;margin:0!important}.layout-cockpit .dv-live>a{max-width:145px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .layout-cockpit .dv-top nav{grid-template-columns:repeat(5,minmax(0,1fr))!important}
+  .layout-cockpit .dv-top nav>.dv-nav-extra{display:none!important}
+  .layout-cockpit .dv-more-nav{position:relative;display:block;height:100%}
+  .layout-cockpit .dv-more-nav summary{display:flex;height:100%;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:#7f91a6;font-size:8px;font-weight:700;list-style:none;cursor:pointer}
+  .layout-cockpit .dv-more-nav summary::before{content:'•••';font-size:16px;letter-spacing:2px}.layout-cockpit .dv-more-nav summary::-webkit-details-marker{display:none}
+  .layout-cockpit .dv-more-nav[open]>div{position:absolute;right:4px;bottom:calc(100% + 8px);display:grid;width:min(220px,70vw);gap:4px;padding:7px;border:1px solid #294861;border-radius:12px;background:#081522;box-shadow:0 -18px 50px #000b}
+  .layout-cockpit .dv-more-nav[open]>div button{display:block!important;min-height:44px!important;height:auto!important;padding:0 12px!important;border:1px solid #1f3b53!important;border-radius:8px!important;text-align:left;font-size:10px!important}
+  .layout-cockpit .dv-nav-primary::before{display:block!important;font-size:17px!important;line-height:18px!important}.layout-cockpit .dv-nav-primary[data-page='screener']::before{content:'⌕'}.layout-cockpit .dv-nav-primary[data-page='grid']::before{content:'▦'}.layout-cockpit .dv-nav-primary[data-page='watchlist']::before{content:'★'}.layout-cockpit .dv-nav-primary[data-page='market']::before{content:'◉'}
+  .layout-cockpit .dv-toolbar{top:var(--ss-global-h)!important}.layout-cockpit.mode-next .dv-toolbar{top:calc(var(--ss-global-h) + var(--ss-context-h))!important}
+  .layout-cockpit .dv-detail{padding-inline:7px!important}.layout-cockpit .dv-detailhead{min-height:52px!important}.layout-cockpit .dv-detail-sections{top:calc(var(--ss-global-h) + 52px);overflow-x:auto}.layout-cockpit.mode-next .dv-detail-sections{top:calc(var(--ss-global-h) + var(--ss-context-h) + 52px)}
+  .layout-cockpit .dv-chartbox,.layout-cockpit .dv-chartbox.ss-resize-vertical{height:100%!important;min-height:0!important;max-height:none!important}
+  .layout-cockpit .dv-tablewrap{height:52svh!important;min-height:350px!important}
+  .layout-cockpit .ryan-dashboard{padding:7px}.layout-cockpit .ryan-hero p{display:none}.layout-cockpit .ryan-hero-actions{width:auto}.layout-cockpit .ryan-summary-card{flex:0 0 136px;min-width:136px}.layout-cockpit .ryan-chart-panel>header{align-items:flex-start;flex-direction:column;padding-right:80px}.layout-cockpit .ryan-chart-controls{max-width:calc(100vw - 30px);overflow-x:auto}
+}
+
+/* Phone drawing controls stay off the price action until explicitly opened. */
+@media (max-width:680px){
+  .layout-cockpit .chart-drawing-toolbar,.layout-cockpit .drawing-inspector{display:none!important}
+  .layout-cockpit .chart-mobile-dock{position:absolute;right:8px;bottom:8px;z-index:22;display:flex;gap:4px;padding:4px;border:1px solid #294861;border-radius:10px;background:#06111ee8;box-shadow:0 8px 28px #0009;pointer-events:auto}
+  .layout-cockpit .chart-mobile-dock button{position:relative;display:grid;min-width:58px;min-height:46px;place-items:center;gap:1px;padding:4px 7px;border:1px solid transparent;border-radius:7px;background:transparent;color:#a9bdcf;font-size:16px;cursor:pointer}
+  .layout-cockpit .chart-mobile-dock button span{font-size:8px}.layout-cockpit .chart-mobile-dock button b{position:absolute;top:2px;right:4px;display:grid;min-width:16px;height:16px;place-items:center;border-radius:9px;background:#216b4d;color:#b4ffd0;font-size:8px}
+  .layout-cockpit .chart-mobile-dock button.active{border-color:#2c8a61;background:#0d3023;color:#77efaa}.layout-cockpit .chart-mobile-dock .chart-owner-cta{min-width:128px;font-size:10px!important}
+  .layout-cockpit .chart-mobile-sheet{position:absolute;right:6px;bottom:62px;left:6px;z-index:28;display:block;max-height:min(62svh,420px);overflow:auto;padding:10px;border:1px solid #315876;border-radius:14px;background:#071522f7;box-shadow:0 -18px 54px #000c;pointer-events:auto;overscroll-behavior:contain}
+  .layout-cockpit .chart-mobile-sheet>header{position:sticky;top:-10px;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:10px;margin:-10px -10px 9px;padding:10px;border-bottom:1px solid #203b53;background:#071522f7}.layout-cockpit .chart-mobile-sheet>header>div{display:grid;gap:3px}.layout-cockpit .chart-mobile-sheet>header b{color:#e5eff7;font-size:12px}.layout-cockpit .chart-mobile-sheet>header span{color:#7892a8;font-size:8px}.layout-cockpit .chart-mobile-sheet>header button{width:44px;height:44px;border:1px solid #294861;border-radius:8px;background:#0b2233;color:#b9cede;font-size:22px}
+  .layout-cockpit .chart-mobile-toolgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.layout-cockpit .chart-mobile-toolgrid button,.layout-cockpit .chart-mobile-style button,.layout-cockpit .chart-mobile-alert-panel button{min-height:44px;border:1px solid #294861;border-radius:8px;background:#0a1c2b;color:#b7c9d8;font-size:10px}.layout-cockpit .chart-mobile-toolgrid button.active{border-color:#27855d;background:#0d3324;color:#78edaa}
+  .layout-cockpit .chart-mobile-layer-panel,.layout-cockpit .chart-mobile-alert-panel{display:grid;gap:9px}.layout-cockpit .chart-mobile-layer-panel label{display:grid;gap:5px;color:#8ea6ba;font-size:9px}.layout-cockpit .chart-mobile-layer-panel select{width:100%;min-height:44px;padding:0 9px;border:1px solid #294861;border-radius:8px;background:#091a29;color:#e2edf6}.layout-cockpit .chart-mobile-style{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.layout-cockpit .chart-mobile-style input[type=color]{width:100%;height:44px;padding:3px;border:1px solid #294861;border-radius:8px;background:#091a29}.layout-cockpit .chart-mobile-style .danger{border-color:#693742;color:#ff929e}
+  .layout-cockpit .chart-mobile-layer-panel small,.layout-cockpit .chart-mobile-layer-panel p,.layout-cockpit .chart-mobile-alert-panel p{margin:0;color:#8298ac;font-size:10px;line-height:1.45}.layout-cockpit .chart-mobile-alert-panel>b{color:#efc766;text-transform:capitalize}.layout-cockpit .chart-mobile-alert-panel>span{padding:7px;border:1px solid #265640;border-radius:7px;background:#0d2b20;color:#8beab2;font-size:9px}.layout-cockpit .chart-mobile-alert-panel .chart-primary-alert{border-color:#25865c;background:#0d3525;color:#83efae}.layout-cockpit .chart-mobile-alert-panel details{padding-top:8px;border-top:1px solid #1c354b;color:#8299ad;font-size:9px}.layout-cockpit .chart-mobile-alert-panel summary{min-height:44px;display:flex;align-items:center;cursor:pointer}
+  .layout-cockpit .chart-drawing-message{bottom:64px!important}
+}
+
+@media (prefers-reduced-motion:reduce){.layout-cockpit *{scroll-behavior:auto!important}}
