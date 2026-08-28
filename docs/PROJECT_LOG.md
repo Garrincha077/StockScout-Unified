@@ -151,3 +151,8 @@
   fixtures, 6 Deno Edge tests, and 2 Bottom PWA tests/builds passed. The 2026-08-25
   production fixture gives real matches for 18/19 exact Bottom screens; the Strict
   RWB screen correctly has no candidate satisfying all of its original thresholds.
+
+## 2026-08-28 — Drawing alert FK advisor follow-up
+
+- Added a covering `(drawing_id, user_id)` index for the owner-safe drawing-alert foreign key after the Supabase performance advisor flagged the original query-oriented partial index as non-covering.
+- This is a schema-only, backward-compatible optimization; alert payloads, ranking, scoring, and market-data processing are unchanged.
