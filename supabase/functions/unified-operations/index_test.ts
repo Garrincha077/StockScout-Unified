@@ -1,5 +1,5 @@
 import{drawingTriggered,priceBar,triggered,type AlertRow}from'./index.ts'
-import{evaluateDrawingGeometry,lineValueAt,rearmAfterClear}from'../_shared/chartGeometry.ts'
+import{evaluateDrawingGeometry,lineValueAt,rearmAfterClear,utcTimeAtLogicalIndex}from'../_shared/chartGeometry.ts'
 
 function assert(value:unknown,message:string){if(!value)throw new Error(message)}
 
@@ -31,6 +31,7 @@ Deno.test('drawing alerts support projected lines, fibs and box transitions',()=
 Deno.test('UTC geometry is interval independent and uses previous and current sloped levels',()=>{
   const drawing={type:'trendline' as const,extend:'both' as const,points:[{time:'2026-08-20',price:8},{time:'2026-08-24',price:12}]}
   assert(lineValueAt(drawing,'2026-08-22')===10,'calendar projection changed between chart intervals')
+  assert(utcTimeAtLogicalIndex(['2026-08-20','2026-08-21','2026-08-24'],3)==='2026-08-27','future chart margin did not follow the final market-bar spacing')
   const result=evaluateDrawingGeometry(drawing,{kind:'line'},'crossing_up',[
     {time:'2026-08-23',open:10,high:12,low:9,close:10.5},
     {time:'2026-08-25',open:12,high:14,low:11,close:13.5},

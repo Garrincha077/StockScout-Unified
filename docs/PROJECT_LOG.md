@@ -166,3 +166,9 @@
 
 - Upgraded the fully pinned Pages artifact and deployment actions to v5.0.0 across EOD and frontend-only publish workflows, removing their deprecated Node.js 20 runtimes without changing scan or deployment semantics.
 - The standalone Bottom PWA now carries the verified active Unified run ID through every push or manual build, embeds it in the frontend contract, and verifies the same ID in the deployed JavaScript asset before its Pages job can pass.
+
+## 2026-08-28 — Trendline future-projection clarity
+
+- Extended the chart renderer into the visible future time-scale margin using the same UTC-day geometry as the EOD evaluator, so projected trendlines no longer appear to stop at the last market bar.
+- New trendlines now follow the familiar forward-ray default. The drawing inspector exposes explicit Segment, Extend right, and Extend both controls and states that daily EOD alerts use the same projection.
+- Existing v1 and v2 drawings retain their stored extension semantics. The live owner MEI trendline and its linked alert were verified read-only in Supabase; no alert was evaluated or delivered during this change.

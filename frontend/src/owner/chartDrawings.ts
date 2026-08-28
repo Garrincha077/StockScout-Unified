@@ -46,12 +46,13 @@ export function isChartDrawingPayload(value:unknown):value is ChartDrawingPayloa
   return(row.version===1||row.version===2)&&DRAWING_TOOLS.includes(row.type as DrawingTool)&&row.type!=='cursor'&&Array.isArray(row.points)&&row.points.every(point=>Boolean(point)&&typeof point==='object'&&!Array.isArray(point)&&typeof(point as Record<string,unknown>).time==='string'&&Number.isFinite(Number((point as Record<string,unknown>).price)))
 }
 
-const extensionFor=(type:Exclude<DrawingTool,'cursor'>):GeometryExtension=>type==='ray'?'right':['trendline','horizontal','channel'].includes(type)?'both':'none'
+const legacyExtensionFor=(type:Exclude<DrawingTool,'cursor'>):GeometryExtension=>type==='ray'?'right':['trendline','horizontal','channel'].includes(type)?'both':'none'
+const newExtensionFor=(type:Exclude<DrawingTool,'cursor'>):GeometryExtension=>type==='trendline'||type==='ray'?'right':['horizontal','channel'].includes(type)?'both':'none'
 
 export function normalizeChartDrawingPayload(value:unknown,legacyInterval:GeometryInterval='daily'):ChartDrawingPayloadV2|null{
   if(!isChartDrawingPayload(value))return null
-  if(value.version===2)return{...value,sourceInterval:value.sourceInterval==='weekly'?'weekly':'daily',visibleIntervals:value.visibleIntervals?.filter(interval=>interval==='daily'||interval==='weekly').length?value.visibleIntervals.filter(interval=>interval==='daily'||interval==='weekly'):['daily','weekly'],xBasis:'utc-day',extend:value.extend??extensionFor(value.type)}
-  return{...value,version:2,sourceInterval:legacyInterval,visibleIntervals:['daily','weekly'],xBasis:'utc-day',extend:extensionFor(value.type)}
+  if(value.version===2)return{...value,sourceInterval:value.sourceInterval==='weekly'?'weekly':'daily',visibleIntervals:value.visibleIntervals?.filter(interval=>interval==='daily'||interval==='weekly').length?value.visibleIntervals.filter(interval=>interval==='daily'||interval==='weekly'):['daily','weekly'],xBasis:'utc-day',extend:value.extend??legacyExtensionFor(value.type)}
+  return{...value,version:2,sourceInterval:legacyInterval,visibleIntervals:['daily','weekly'],xBasis:'utc-day',extend:legacyExtensionFor(value.type)}
 }
 
 export function newDrawing(type:Exclude<DrawingTool,'cursor'>,points:DrawingPoint[],text?:string,sourceInterval:GeometryInterval='daily'):ChartDrawingPayloadV2{
@@ -61,7 +62,7 @@ export function newDrawing(type:Exclude<DrawingTool,'cursor'>,points:DrawingPoin
       ?[points[0],{...points.at(-1)!,time:points[0].time}]
       :points
   return{
-    version:2,type,points:normalized,color:type==='fib'?'#2dd4bf':'#f0b94f',width:2,dash:'solid',sourceInterval,visibleIntervals:['daily','weekly'],xBasis:'utc-day',extend:extensionFor(type),
+    version:2,type,points:normalized,color:type==='fib'?'#2dd4bf':'#f0b94f',width:2,dash:'solid',sourceInterval,visibleIntervals:['daily','weekly'],xBasis:'utc-day',extend:newExtensionFor(type),
     text:type==='text'?(text?.trim()||'Note'):undefined,
     fibLevels:type==='fib'?[...DEFAULT_FIB_LEVELS]:undefined,
   }
