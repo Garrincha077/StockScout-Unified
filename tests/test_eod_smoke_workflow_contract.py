@@ -28,6 +28,7 @@ def test_smoke_workflow_exercises_both_scanner_boundaries() -> None:
     workflow = _workflow()
     assert "--tickers \"AAPL,MSFT,NVDA,AMZN,META,GOOGL,JPM,XOM,CAT,COST,UNH,NKE\"" in workflow
     assert "--allow-fixture" in workflow
+    assert 'https://example.invalid/runs/$run_id/charts' in workflow
     assert "python run_resumable_fast_scan.py" in workflow
     assert "--test-mode" in workflow
     assert "python validate_scan_session.py" in workflow
