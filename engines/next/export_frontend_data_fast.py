@@ -38,6 +38,32 @@ def chart_history_window() -> dict[str, str]:
     }
 
 
+def stamp_canonical_market_session(path: Path = base.OUT) -> None:
+    """Stamp the immutable Unified session after the frozen legacy export.
+
+    The upstream report intentionally records runner wall-clock time.  It is
+    preserved unchanged for Ryan baseline parity; this additive projection only
+    corrects the public canonical market-session metadata that Unified uses to
+    join the independently-run Bottom asset.  No candidate, score or legacy
+    field is touched.
+    """
+    value = os.getenv("STOCKSCOUT_EXPECTED_SESSION", "").strip()
+    if not value:
+        return
+    try:
+        session = date.fromisoformat(value).isoformat()
+    except ValueError as exc:
+        raise RuntimeError(f"Invalid STOCKSCOUT_EXPECTED_SESSION: {value!r}") from exc
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    market = dict(payload.get("market") or {})
+    previous = market.get("scanDate")
+    market["scanDate"] = session
+    payload["market"] = market
+    path.write_text(json.dumps(payload, separators=(",", ":"), ensure_ascii=False) + "\n", encoding="utf-8")
+    if previous != session:
+        print(f"Stamped canonical market session {session} (legacy report had {previous or 'none'})")
+
+
 def normalize_vcp_data(value: dict | None) -> dict:
     """Expose upstream ``vcp_quality`` under the scorer's historical alias.
 
@@ -221,5 +247,6 @@ base.build_five_year_chart_shards = build_from_scan_cache
 
 if __name__ == "__main__":
     base.main()
+    stamp_canonical_market_session()
     from compute_ma_crosses import hydrate_dataset
     hydrate_dataset()
