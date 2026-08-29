@@ -255,10 +255,10 @@ jobs:
         env:
           FORCE_FULL_REFRESH: ${{ inputs.force_full_refresh || 'false' }}
           STOCKSCOUT_EXPECTED_SESSION: ${{ needs.prepare.outputs.session_date }}
-          STOCKSCOUT_PROGRESS_SOURCE_HASH: ${{ hashFiles('engines/next/run_fast_scan.py', 'engines/next/run_optimized_scan.py', 'engines/next/src/**/*.py', 'engines/next/requirements.lock') }}
+          STOCKSCOUT_PROGRESS_SOURCE_HASH: ${{ hashFiles('engines/next/run_resumable_fast_scan.py', 'engines/next/run_fast_scan.py', 'engines/next/run_optimized_scan.py', 'engines/next/src/**/*.py', 'engines/next/requirements.lock') }}
         run: |
           mkdir -p data/daily_scans data/logs data/batch_results frontend/public/data
-          python run_fast_scan.py --conservative --git-storage --resume
+          python run_resumable_fast_scan.py --conservative --git-storage --resume
           python validate_scan_session.py
 
       - name: Preserve Next resume checkpoint after every scanner attempt
