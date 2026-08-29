@@ -19,6 +19,15 @@ def test_next_validates_the_exact_orchestrator_session() -> None:
     assert "STOCKSCOUT_EXPECTED_SESSION: ${{ steps.guard.outputs.session_date }}" in workflow
 
 
+def test_bottom_scan_has_an_early_market_session_preflight() -> None:
+    # The preflight is deliberately inside the production scan entrypoint so
+    # every workflow caller (scheduled, manual, and recovery) gets the same
+    # bounded provider check before the expensive full-universe loop.
+    runner = Path("src/stockscout_eod/runner.py").read_text(encoding="utf-8")
+    assert "preflight_session(pipeline, session_date, universe)" in runner
+    assert "Market-session preflight passed" in runner
+
+
 def test_recovery_skips_telegram_rendering_when_notifications_are_disabled() -> None:
     workflow = RECOVERY_WORKFLOW.read_text(encoding="utf-8")
     assert "- name: Render Telegram dry run only when requested" in workflow
