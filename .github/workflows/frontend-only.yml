@@ -1,0 +1,128 @@
+name: Frontend-only immutable Pages deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: GitHub Actions run whose verified Pages artifact supplies immutable data
+        required: true
+        type: string
+      run_id:
+        description: Exact run ID expected in the downloaded Pages manifest
+        required: true
+        type: string
+      session_date:
+        description: Session date expected in the downloaded Pages manifest (YYYY-MM-DD)
+        required: true
+        type: string
+
+concurrency:
+  group: stockscout-unified-frontend-only
+  cancel-in-progress: false
+
+jobs:
+  build-existing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      run_id: ${{ steps.verify.outputs.run_id }}
+    steps:
+      - name: Check out Unified application
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download the exact existing Pages artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          mkdir -p .staging/source
+          gh run download "$SOURCE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name github-pages \
+            --dir .staging/source
+          test -s .staging/source/artifact.tar
+          mkdir -p .staging/source/pages
+          tar -xf .staging/source/artifact.tar -C .staging/source/pages
+
+      - name: Verify immutable run and session identity
+        id: verify
+        env:
+          EXPECTED_RUN_ID: ${{ inputs.run_id }}
+          EXPECTED_SESSION_DATE: ${{ inputs.session_date }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path('.staging/source/pages')
+          manifest = json.loads((root / 'data/manifest.json').read_text())
+          if manifest.get('runId') != os.environ['EXPECTED_RUN_ID']:
+              raise SystemExit(f"Pages artifact run mismatch: {manifest.get('runId')}")
+          if manifest.get('sessionDate') != os.environ['EXPECTED_SESSION_DATE']:
+              raise SystemExit(f"Pages artifact session mismatch: {manifest.get('sessionDate')}")
+          if manifest.get('status') != 'healthy':
+              raise SystemExit(f"Pages artifact is not healthy: {manifest.get('status')}")
+          for mode in ('bottom-fishing', 'next', 'ryan-original'):
+              mode_manifest = json.loads((root / f'data/modes/{mode}/manifest.json').read_text())
+              if mode_manifest.get('runId') != os.environ['EXPECTED_RUN_ID']:
+                  raise SystemExit(f"{mode} manifest run mismatch")
+          print(f"run_id={manifest['runId']}")
+          print(f"session_date={manifest['sessionDate']}")
+          PY
+          {
+            echo "## Frontend-only immutable deployment"
+            echo ""
+            echo "Run: `${{ inputs.run_id }}`"
+            echo "Session: `${{ inputs.session_date }}`"
+            echo "Source Actions run: `${{ inputs.source_run_id }}`"
+            echo "Scan invoked: **false**"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Reuse immutable public data with the new frontend
+        run: |
+          mkdir -p frontend/public
+          cp -a .staging/source/pages/data frontend/public/data
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Test and build frontend against the exact run
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          EXPECTED_RUN_ID: ${{ inputs.run_id }}
+        run: |
+          npm ci --prefix frontend
+          npm run check --prefix frontend
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          manifest = json.loads(Path('frontend/dist/data/manifest.json').read_text())
+          if manifest.get('runId') != os.environ['EXPECTED_RUN_ID']:
+              raise SystemExit('built frontend changed the immutable run ID')
+          PY
+
+      - name: Upload verified frontend-only Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: frontend/dist
+          retention-days: 14
+
+  deploy-pages:
+    needs: build-existing
+    uses: ./.github/workflows/deploy-pages.yml
+    with:
+      run_id: ${{ needs.build-existing.outputs.run_id }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
