@@ -1,9 +1,11 @@
-"""Identity-safe resume support for the fast Next full-market scanner.
+"""Identity-safe resume and provider hardening for the fast Next scanner.
 
-The legacy optimized processor already checkpoints every batch, but its pickle did
-not prove which NYSE session, universe, or source/config produced it. This
-wrapper keeps the scoring path unchanged while making resume fail-closed and
-emits a compact JSON metrics sidecar for operator observability.
+The vendored fast processor remains untouched. This wrapper adds two production
+boundaries around it:
+- checkpoints are reused only when NYSE session, universe and source identity match;
+- transient batched OHLCV failures are retried with bounded exponential backoff.
+
+Scoring and signal rules are unchanged.
 """
 from __future__ import annotations
 
@@ -12,9 +14,13 @@ import json
 import logging
 import os
 import pickle
+import random
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
+
+import yfinance as yf
 
 from .fast_batch_processor import FastOptimizedBatchProcessor
 
@@ -24,10 +30,20 @@ PROGRESS_SCHEMA = "stockscout-next-progress/v1"
 METRICS_SCHEMA = "stockscout-next-metrics/v1"
 SOURCE_HASH_ENV = "STOCKSCOUT_PROGRESS_SOURCE_HASH"
 SESSION_ENV = "STOCKSCOUT_EXPECTED_SESSION"
+_PROVIDER_MAX_ATTEMPTS = 3
+_PROVIDER_BACKOFF_BASE_SECONDS = 0.75
+_PROVIDER_BACKOFF_JITTER_SECONDS = 0.25
+_RETRYABLE_PROVIDER_CLASSES = {
+    "timeout",
+    "rate_limit",
+    "server_5xx",
+    "network",
+    "empty_payload",
+}
 
 
 class ResumableFastOptimizedBatchProcessor(FastOptimizedBatchProcessor):
-    """Fast processor with strict checkpoint identity validation."""
+    """Fast processor with strict checkpoint identity and bounded provider retry."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -36,6 +52,10 @@ class ResumableFastOptimizedBatchProcessor(FastOptimizedBatchProcessor):
         self.resume_checkpoint_used = False
         self.resume_checkpoint_reason = "not-requested"
         self.metrics_file = Path(self.results_dir).parent / "logs" / "next_scan_metrics.json"
+        self.provider_retry_count = 0
+        self.provider_rate_limit_count = 0
+        self.provider_timeout_count = 0
+        self.provider_error_types: dict[str, int] = {}
 
     @staticmethod
     def _identity_digest(identity: dict[str, Any]) -> str:
@@ -69,8 +89,104 @@ class ResumableFastOptimizedBatchProcessor(FastOptimizedBatchProcessor):
             "processor": "resumable-fast-v1",
         }
 
+    @staticmethod
+    def _classify_provider_error(exc: Exception) -> str:
+        message = str(exc).lower()
+        if isinstance(exc, TimeoutError) or any(
+            token in message for token in ("timed out", "timeout", "read timeout")
+        ):
+            return "timeout"
+        if any(token in message for token in ("429", "rate limit", "too many requests")):
+            return "rate_limit"
+        if any(
+            token in message
+            for token in ("500", "502", "503", "504", "server error", "bad gateway")
+        ):
+            return "server_5xx"
+        if any(
+            token in message
+            for token in (
+                "connection",
+                "temporarily unavailable",
+                "remote disconnected",
+                "connection reset",
+                "ssl error",
+                "dns",
+            )
+        ):
+            return "network"
+        if "empty provider payload" in message:
+            return "empty_payload"
+        return "provider_error"
+
+    def _record_provider_error(self, error_class: str) -> None:
+        self.provider_error_types[error_class] = self.provider_error_types.get(error_class, 0) + 1
+        if error_class == "rate_limit":
+            self.provider_rate_limit_count += 1
+        if error_class == "timeout":
+            self.provider_timeout_count += 1
+
+    def _download_chunk(self, chunk: List[str], threads: bool = True) -> Dict[str, Any]:
+        """Fetch one OHLCV chunk with bounded retries around the existing 20s timeout.
+
+        Parent-level missing/stale-symbol retries still run after this boundary.
+        This method only retries a whole chunk when the provider call itself
+        fails or returns no usable payload.
+        """
+        if not chunk:
+            return {}
+
+        for attempt in range(_PROVIDER_MAX_ATTEMPTS):
+            try:
+                raw = yf.download(
+                    chunk,
+                    interval="1d",
+                    group_by="ticker",
+                    auto_adjust=True,
+                    progress=False,
+                    threads=threads,
+                    timeout=20,
+                    **self._history_window(),
+                )
+                if raw is None or raw.empty:
+                    raise RuntimeError("empty provider payload")
+
+                out: Dict[str, Any] = {}
+                for ticker in chunk:
+                    frame = self._extract_ticker_frame(raw, ticker, len(chunk))
+                    if not frame.empty:
+                        out[ticker] = frame
+                return out
+            except Exception as exc:
+                error_class = self._classify_provider_error(exc)
+                self._record_provider_error(error_class)
+                retryable = error_class in _RETRYABLE_PROVIDER_CLASSES
+                final_attempt = attempt + 1 >= _PROVIDER_MAX_ATTEMPTS
+                logger.warning(
+                    "Next OHLCV provider failure: class=%s attempt=%d/%d symbols=%d error=%s",
+                    error_class,
+                    attempt + 1,
+                    _PROVIDER_MAX_ATTEMPTS,
+                    len(chunk),
+                    exc,
+                )
+                if not retryable or final_attempt:
+                    return {}
+                self.provider_retry_count += 1
+                delay = (
+                    _PROVIDER_BACKOFF_BASE_SECONDS * (2**attempt)
+                    + random.uniform(0.0, _PROVIDER_BACKOFF_JITTER_SECONDS)
+                )
+                logger.info(
+                    "Retrying Next OHLCV provider chunk in %.2fs (class=%s)",
+                    delay,
+                    error_class,
+                )
+                time.sleep(delay)
+        return {}
+
     def _rate_limit_count(self) -> int:
-        total = 0
+        total = self.provider_rate_limit_count
         for error_type, count in self.error_types.items():
             example = self.error_examples.get(error_type)
             message = ""
@@ -90,6 +206,13 @@ class ResumableFastOptimizedBatchProcessor(FastOptimizedBatchProcessor):
                 continue
         pairs.sort(key=lambda item: (-item[1], item[0]))
         return [{"name": name, "count": count} for name, count in pairs[:limit]]
+
+    def _combined_error_types(self) -> dict[str, int]:
+        combined = {str(name): int(count) for name, count in self.error_types.items()}
+        for name, count in self.provider_error_types.items():
+            key = f"provider:{name}"
+            combined[key] = combined.get(key, 0) + int(count)
+        return combined
 
     def _write_progress_metrics(
         self,
@@ -117,12 +240,13 @@ class ResumableFastOptimizedBatchProcessor(FastOptimizedBatchProcessor):
             "errorRatePct": round(
                 100.0 * self.error_count / max(1, self.total_requests), 2
             ),
-            "retryCount": None,
+            "retryCount": int(self.provider_retry_count),
             "rateLimitCount": self._rate_limit_count(),
+            "providerTimeoutCount": int(self.provider_timeout_count),
             "resumeCheckpointUsed": bool(self.resume_checkpoint_used),
             "resumeCheckpointReason": self.resume_checkpoint_reason,
             "progressIdentitySha256": self._identity_digest(identity),
-            "topErrorClasses": self._top_counts(self.error_types),
+            "topErrorClasses": self._top_counts(self._combined_error_types()),
             "topFilterReasons": self._top_counts(self.filter_reasons),
             "generatedAt": datetime.now().isoformat(),
         }
@@ -205,6 +329,10 @@ class ResumableFastOptimizedBatchProcessor(FastOptimizedBatchProcessor):
         self.error_types = dict(counters.get("error_types") or {})
         self.error_examples = dict(counters.get("error_examples") or {})
         self.filter_reasons = dict(counters.get("filter_reasons") or {})
+        self.provider_retry_count = int(counters.get("provider_retry_count") or 0)
+        self.provider_rate_limit_count = int(counters.get("provider_rate_limit_count") or 0)
+        self.provider_timeout_count = int(counters.get("provider_timeout_count") or 0)
+        self.provider_error_types = dict(counters.get("provider_error_types") or {})
         self.resume_checkpoint_used = True
         self.resume_checkpoint_reason = "accepted"
         logger.info(
@@ -236,6 +364,10 @@ class ResumableFastOptimizedBatchProcessor(FastOptimizedBatchProcessor):
                 "error_types": self.error_types,
                 "error_examples": self.error_examples,
                 "filter_reasons": self.filter_reasons,
+                "provider_retry_count": self.provider_retry_count,
+                "provider_rate_limit_count": self.provider_rate_limit_count,
+                "provider_timeout_count": self.provider_timeout_count,
+                "provider_error_types": self.provider_error_types,
             },
         }
 
@@ -296,6 +428,9 @@ class ResumableFastOptimizedBatchProcessor(FastOptimizedBatchProcessor):
             result["progress_identity_sha256"] = self._identity_digest(
                 self.progress_identity
             )
+            result["provider_retry_count"] = self.provider_retry_count
+            result["provider_rate_limit_count"] = self.provider_rate_limit_count
+            result["provider_timeout_count"] = self.provider_timeout_count
             self._write_progress_metrics(
                 result.get("analyses", []), status="complete", extra=result
             )
