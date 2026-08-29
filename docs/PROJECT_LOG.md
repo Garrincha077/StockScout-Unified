@@ -235,3 +235,7 @@
   This addresses the two observed fail-closed cases (SPY newer than the universe,
   and a long scan reporting the following calendar day) without changing any
   score, ranking, detector or trade-plan rule.
+- Added a bounded Bottom market-session preflight (SPY, QQQ and eight stable
+  universe symbols) before the full provider loop. If the selected session is
+  not available, the run now stops in seconds with the provider/date details
+  instead of spending nearly an hour before the activation health gate.
