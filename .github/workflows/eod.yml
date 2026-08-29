@@ -134,6 +134,9 @@ jobs:
           restore-keys: |
             unified-bottom-market-${{ runner.os }}-
 
+      - name: Start Bottom scanner timing
+        run: echo "BOTTOM_SCAN_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+
       - name: Restore same-session Bottom checkpoint
         id: bottom_checkpoint
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -184,6 +187,16 @@ jobs:
           path: .staging/bottom-checkpoint
           key: unified-bottom-v1-${{ runner.os }}-${{ needs.prepare.outputs.session_date }}-${{ hashFiles('config/eod.yaml', 'src/stockscout_eod/**/*.py', 'requirements.lock') }}
 
+      - name: Summarize Bottom scanner
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          python -m stockscout_unified.observability bottom \
+            --input .staging/bottom.json \
+            --output .staging/bottom-scan-summary.json \
+            --github-summary "$GITHUB_STEP_SUMMARY" \
+            --started-at "${BOTTOM_SCAN_STARTED_AT:-0}"
+
       - name: Preserve Bottom scanner handoff
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -191,6 +204,7 @@ jobs:
           path: |
             .staging/bottom.json
             .staging/bottom-charts/
+            .staging/bottom-scan-summary.json
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 2
@@ -228,6 +242,9 @@ jobs:
           key: unified-next-market-${{ runner.os }}-${{ needs.prepare.outputs.session_date }}-${{ hashFiles('engines/next/requirements.lock') }}
           restore-keys: |
             unified-next-market-${{ runner.os }}-
+
+      - name: Start Next scanner timing
+        run: echo "NEXT_SCAN_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Download prior-attempt Next resume checkpoints
         if: github.run_attempt > 1
@@ -323,6 +340,16 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 2
+
+      - name: Summarize Next scanner
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          python -m stockscout_unified.observability next \
+            --input engines/next/data/logs/next_scan_metrics.json \
+            --output engines/next/data/logs/next-job-summary.json \
+            --github-summary "$GITHUB_STEP_SUMMARY" \
+            --started-at "${NEXT_SCAN_STARTED_AT:-0}"
 
       - name: Preserve Next diagnostics after every attempt
         if: ${{ always() }}
