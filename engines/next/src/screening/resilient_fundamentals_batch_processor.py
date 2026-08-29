@@ -33,6 +33,29 @@ class ResilientFundamentalsResumableFastOptimizedBatchProcessor(
             return self.git_fetcher.provider_stats()
         return {}
 
+    @staticmethod
+    def _merge_top_errors(metrics: dict, provider: dict[str, object]) -> None:
+        merged: dict[str, int] = {}
+        for item in metrics.get("topErrorClasses") or []:
+            if not isinstance(item, dict):
+                continue
+            try:
+                merged[str(item.get("name"))] = int(item.get("count") or 0)
+            except (TypeError, ValueError):
+                continue
+        for name, raw_count in dict(provider.get("errorClasses") or {}).items():
+            try:
+                key = f"fundamentals:{name}"
+                merged[key] = merged.get(key, 0) + int(raw_count)
+            except (TypeError, ValueError):
+                continue
+        metrics["topErrorClasses"] = [
+            {"name": name, "count": count}
+            for name, count in sorted(
+                merged.items(), key=lambda item: (-item[1], item[0])
+            )[:5]
+        ]
+
     def _write_progress_metrics(
         self,
         results: List[Dict],
@@ -57,14 +80,18 @@ class ResilientFundamentalsResumableFastOptimizedBatchProcessor(
             metrics["fundamentalsFailedTickerCount"] = provider.get("failedTickerCount", 0)
             metrics["fundamentalsEmptyDataCount"] = provider.get("emptyDataCount", 0)
             metrics["fundamentalsErrorClasses"] = provider.get("errorClasses", {})
-            # Keep the existing top-level retry/rate-limit counters meaningful
-            # for the whole Next scanner without changing the legacy error rate.
+            # Keep the existing top-level counters meaningful for the whole Next
+            # scanner without changing the legacy analysis error rate.
             metrics["retryCount"] = int(metrics.get("retryCount") or 0) + int(
                 provider.get("retryCount") or 0
             )
             metrics["rateLimitCount"] = int(metrics.get("rateLimitCount") or 0) + int(
                 provider.get("rateLimitCount") or 0
             )
+            metrics["providerTimeoutCount"] = int(
+                metrics.get("providerTimeoutCount") or 0
+            ) + int(provider.get("timeoutCount") or 0)
+            self._merge_top_errors(metrics, provider)
             temporary = Path(f"{self.metrics_file}.tmp")
             temporary.write_text(
                 json.dumps(metrics, sort_keys=True, indent=2, allow_nan=False) + "\n",
@@ -84,9 +111,11 @@ class ResilientFundamentalsResumableFastOptimizedBatchProcessor(
                 progress = pickle.load(handle)
             if not isinstance(progress, dict):
                 return
-            progress["provider_counters"] = {
-                "fundamentals": self._fundamentals_stats(),
-            }
+            provider_counters = progress.get("provider_counters")
+            if not isinstance(provider_counters, dict):
+                provider_counters = {}
+            provider_counters["fundamentals"] = self._fundamentals_stats()
+            progress["provider_counters"] = provider_counters
             temporary = Path(f"{self.progress_file}.tmp")
             with temporary.open("wb") as handle:
                 pickle.dump(progress, handle, protocol=pickle.HIGHEST_PROTOCOL)
