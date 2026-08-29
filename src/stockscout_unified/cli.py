@@ -15,7 +15,7 @@ from stockscout_eod.runner import load_raw_scan
 from .contracts import UnifiedManifestV1
 from .notifications import build_series, deliver_series, evaluate_owner_alerts
 from .publisher import activate_unified, attach_bottom_screener_asset, publish_adjusted_mode
-from .reuse import prepare_bottom_reuse
+from .reuse import prepare_bottom_reuse, rebind_bottom_checkpoint
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -40,6 +40,16 @@ def _parser() -> argparse.ArgumentParser:
     reuse.add_argument("--output-dir", required=True)
     reuse.add_argument("--run-id", required=True)
     reuse.add_argument("--storage-base-url", required=True)
+
+    rebind = commands.add_parser(
+        "rebind-bottom-checkpoint",
+        help="Reuse a verified same-session Bottom checkpoint under a new run identity",
+    )
+    rebind.add_argument("--checkpoint-dir", required=True)
+    rebind.add_argument("--output-dir", required=True)
+    rebind.add_argument("--run-id", required=True)
+    rebind.add_argument("--session-date", required=True)
+    rebind.add_argument("--storage-base-url", required=True)
 
     adjusted = commands.add_parser("publish-adjusted", help="Publish isolated Next or Ryan assets")
     adjusted.add_argument("--mode", choices=("next", "ryan-original"), required=True)
@@ -155,6 +165,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "rawScan": str(raw_path),
                     "chartCoveragePct": charts.coverage_pct,
                     "chartsAvailable": charts.available,
+                },
+                sort_keys=True,
+            )
+        )
+        return 0
+    if args.command == "rebind-bottom-checkpoint":
+        raw_path, charts = rebind_bottom_checkpoint(
+            args.checkpoint_dir,
+            output_dir=args.output_dir,
+            run_id=args.run_id,
+            expected_session_date=args.session_date,
+            storage_base_url=args.storage_base_url,
+        )
+        print(
+            json.dumps(
+                {
+                    "rawScan": str(raw_path),
+                    "chartCoveragePct": charts.coverage_pct,
+                    "chartsAvailable": charts.available,
+                    "checkpointReused": True,
                 },
                 sort_keys=True,
             )
