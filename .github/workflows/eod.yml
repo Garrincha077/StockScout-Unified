@@ -46,16 +46,15 @@ jobs:
       pages: write
       id-token: write
 
-  scan-build:
+  prepare:
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.reuse_existing }}
     runs-on: ubuntu-latest
-    timeout-minutes: 330
+    timeout-minutes: 30
     permissions:
       contents: read
     outputs:
       should_run: ${{ steps.guard.outputs.should_run }}
       session_date: ${{ steps.guard.outputs.session_date }}
-      run_id: ${{ steps.identity.outputs.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -68,7 +67,7 @@ jobs:
             requirements-dev.lock
             engines/next/requirements.lock
 
-      - name: Install pinned Python runtimes
+      - name: Install pinned validation runtime
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.lock -r requirements-dev.lock
@@ -97,12 +96,6 @@ jobs:
           if [ -n "$REQUESTED_DATE" ]; then args+=(--requested-date "$REQUESTED_DATE"); fi
           python -m stockscout_eod.cli "${args[@]}"
 
-      - name: Create immutable run identity
-        if: steps.guard.outputs.should_run == 'true'
-        id: identity
-        shell: bash
-        run: echo "run_id=${{ steps.guard.outputs.session_date }}-eod-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
-
       - name: Verify pinned source contracts
         if: steps.guard.outputs.should_run == 'true'
         run: |
@@ -112,57 +105,72 @@ jobs:
           cd engines/next
           python verify_legacy_baseline.py
 
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        if: steps.guard.outputs.should_run == 'true'
-        with:
-          path: |
-            data/cache
-            engines/next/data/fundamentals_cache
-            engines/next/data/git_storage
-          key: unified-market-${{ runner.os }}-${{ steps.guard.outputs.session_date }}-${{ hashFiles('requirements.lock', 'engines/next/requirements.lock') }}
-          restore-keys: |
-            unified-market-${{ runner.os }}-
+  bottom:
+    needs: prepare
+    if: needs.prepare.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Restore only compact previous history
-        if: steps.guard.outputs.should_run == 'true'
-        run: python scripts/restore_compact_history.py
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
+
+      - name: Install Bottom runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.lock
+          python -m pip install -e .
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: data/cache
+          key: unified-bottom-market-${{ runner.os }}-${{ needs.prepare.outputs.session_date }}-${{ hashFiles('requirements.lock') }}
+          restore-keys: |
+            unified-bottom-market-${{ runner.os }}-
 
       - name: Restore same-session Bottom checkpoint
         id: bottom_checkpoint
-        if: steps.guard.outputs.should_run == 'true'
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .staging/bottom-checkpoint
-          key: unified-bottom-v1-${{ runner.os }}-${{ steps.guard.outputs.session_date }}-${{ hashFiles('config/eod.yaml', 'src/stockscout_eod/**/*.py', 'requirements.lock') }}
+          key: unified-bottom-v1-${{ runner.os }}-${{ needs.prepare.outputs.session_date }}-${{ hashFiles('config/eod.yaml', 'src/stockscout_eod/**/*.py', 'requirements.lock') }}
+
+      - name: Create Bottom scanner identity
+        id: identity
+        shell: bash
+        run: echo "run_id=${{ needs.prepare.outputs.session_date }}-bottom-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
 
       - name: Run Bottom Fishing scan and charts on cache miss
-        if: ${{ steps.guard.outputs.should_run == 'true' && steps.bottom_checkpoint.outputs.cache-hit != 'true' }}
+        if: steps.bottom_checkpoint.outputs.cache-hit != 'true'
         env:
           STOCK_SCOUT_NO_NOTIFY: "1"
         run: |
           mkdir -p .staging
-          python -m stockscout_eod.cli scan --config config/eod.yaml --output .staging/bottom.json --session-date "${{ steps.guard.outputs.session_date }}" --run-id "${{ steps.identity.outputs.run_id }}" --no-notify
+          python -m stockscout_eod.cli scan --config config/eod.yaml --output .staging/bottom.json --session-date "${{ needs.prepare.outputs.session_date }}" --run-id "${{ steps.identity.outputs.run_id }}" --no-notify
           python -m stockscout_eod.cli health --input .staging/bottom.json
           python -m stockscout_eod.cli charts --input .staging/bottom.json --config config/eod.yaml --output .staging/bottom-charts --storage-base-url "https://garrincha077.github.io/StockScout-Unified/data/modes/bottom-fishing/runs/${{ steps.identity.outputs.run_id }}/charts"
 
-      - name: Rebind cached Bottom checkpoint to current run
-        if: ${{ steps.guard.outputs.should_run == 'true' && steps.bottom_checkpoint.outputs.cache-hit == 'true' }}
+      - name: Rebind cached Bottom checkpoint to scanner run
+        if: steps.bottom_checkpoint.outputs.cache-hit == 'true'
         run: |
           python -m stockscout_unified.cli rebind-bottom-checkpoint \
             --checkpoint-dir .staging/bottom-checkpoint \
             --output-dir .staging \
             --run-id "${{ steps.identity.outputs.run_id }}" \
-            --session-date "${{ steps.guard.outputs.session_date }}" \
+            --session-date "${{ needs.prepare.outputs.session_date }}" \
             --storage-base-url "https://garrincha077.github.io/StockScout-Unified/data/modes/bottom-fishing/runs/${{ steps.identity.outputs.run_id }}/charts"
 
-      - name: Validate and publish Bottom Fishing checkpoint
-        if: steps.guard.outputs.should_run == 'true'
-        run: |
-          python -m stockscout_eod.cli health --input .staging/bottom.json
-          python -m stockscout_unified.cli publish-bottom --raw-scan .staging/bottom.json --public-dir frontend/public --previous-manifest frontend/public/data/modes/bottom-fishing/manifest.json --chart-manifest ".staging/bottom-charts/${{ steps.identity.outputs.run_id }}/manifest.json" --chart-staging-dir .staging/bottom-charts
+      - name: Validate Bottom handoff
+        run: python -m stockscout_eod.cli health --input .staging/bottom.json
 
       - name: Stage fresh Bottom checkpoint for reuse
-        if: ${{ steps.guard.outputs.should_run == 'true' && steps.bottom_checkpoint.outputs.cache-hit != 'true' }}
+        if: steps.bottom_checkpoint.outputs.cache-hit != 'true'
         run: |
           rm -rf .staging/bottom-checkpoint
           mkdir -p .staging/bottom-checkpoint
@@ -170,14 +178,13 @@ jobs:
           cp -a .staging/bottom-charts .staging/bottom-checkpoint/bottom-charts
 
       - name: Save reusable Bottom checkpoint before Next
-        if: ${{ steps.guard.outputs.should_run == 'true' && steps.bottom_checkpoint.outputs.cache-hit != 'true' }}
+        if: steps.bottom_checkpoint.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .staging/bottom-checkpoint
-          key: unified-bottom-v1-${{ runner.os }}-${{ steps.guard.outputs.session_date }}-${{ hashFiles('config/eod.yaml', 'src/stockscout_eod/**/*.py', 'requirements.lock') }}
+          key: unified-bottom-v1-${{ runner.os }}-${{ needs.prepare.outputs.session_date }}-${{ hashFiles('config/eod.yaml', 'src/stockscout_eod/**/*.py', 'requirements.lock') }}
 
-      - name: Preserve resumable Bottom checkpoint before Next
-        if: steps.guard.outputs.should_run == 'true'
+      - name: Preserve Bottom scanner handoff
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: unified-bottom-${{ github.run_id }}-${{ github.run_attempt }}
@@ -188,23 +195,55 @@ jobs:
           if-no-files-found: error
           retention-days: 2
 
+  next:
+    needs: prepare
+    if: needs.prepare.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            engines/next/requirements.lock
+
+      - name: Install Next runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.lock
+          python -m pip install --require-hashes -r engines/next/requirements.lock
+          python -m pip install -e .
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            engines/next/data/fundamentals_cache
+            engines/next/data/git_storage
+          key: unified-next-market-${{ runner.os }}-${{ needs.prepare.outputs.session_date }}-${{ hashFiles('engines/next/requirements.lock') }}
+          restore-keys: |
+            unified-next-market-${{ runner.os }}-
+
       - name: Run Next scanner (adjusted OHLCV)
-        if: steps.guard.outputs.should_run == 'true'
         working-directory: engines/next
         env:
           FORCE_FULL_REFRESH: ${{ inputs.force_full_refresh || 'false' }}
-          STOCKSCOUT_EXPECTED_SESSION: ${{ steps.guard.outputs.session_date }}
+          STOCKSCOUT_EXPECTED_SESSION: ${{ needs.prepare.outputs.session_date }}
         run: |
           mkdir -p data/daily_scans data/logs data/batch_results frontend/public/data
           python run_fast_scan.py --conservative --git-storage
           python validate_scan_session.py
 
       - name: Enrich Next and exact Ryan Original capture
-        if: steps.guard.outputs.should_run == 'true'
         working-directory: engines/next
         env:
           FORCE_FULL_REFRESH: ${{ inputs.force_full_refresh || 'false' }}
-          STOCKSCOUT_EXPECTED_SESSION: ${{ steps.guard.outputs.session_date }}
+          STOCKSCOUT_EXPECTED_SESSION: ${{ needs.prepare.outputs.session_date }}
         run: |
           python hydrate_rich_fundamentals.py
           python export_frontend_data_fast.py
@@ -219,15 +258,12 @@ jobs:
           python compute_daily_changes.py data/batch_results/previous_frontend.json frontend/public/data/latest.json
           python finalize_opportunity_v2.py
 
-      - name: Validate Next dataset before publish
-        if: steps.guard.outputs.should_run == 'true'
+      - name: Validate Next dataset before handoff
         working-directory: engines/next
         env:
-          STOCKSCOUT_EXPECTED_SESSION: ${{ steps.guard.outputs.session_date }}
+          STOCKSCOUT_EXPECTED_SESSION: ${{ needs.prepare.outputs.session_date }}
         run: |
           python validate_canonical_dataset.py
-          # Reassert the same cached-session invariant immediately before
-          # publication; no enrichment step may turn an EOD run into a new day.
           python validate_scan_session.py
           python audit_group_leadership.py
           python audit_pipeline_models.py
@@ -235,8 +271,30 @@ jobs:
           python verify_legacy_baseline.py
           python validate_frontend_charts.py frontend/public --strict --minimum-coverage 0.95
 
+      - name: Build verified read-only Next contexts
+        run: python scripts/build_next_contexts.py --output-dir .staging/next-context
+
+      - name: Stage validated Next handoff
+        run: |
+          rm -rf .staging/next-checkpoint
+          mkdir -p .staging/next-checkpoint
+          cp engines/next/frontend/public/data/latest.json .staging/next-checkpoint/latest.json
+          cp engines/next/frontend/public/data/manifest.json .staging/next-checkpoint/manifest.json
+          cp engines/next/data/daily_scans/latest_optimized_scan.txt .staging/next-checkpoint/latest_optimized_scan.txt
+          cp -a engines/next/frontend/public/data/charts .staging/next-checkpoint/charts
+          cp -a .staging/next-context .staging/next-checkpoint/next-context
+
+      - name: Preserve Next scanner handoff
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unified-next-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .staging/next-checkpoint/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 2
+
       - name: Preserve Next diagnostics after every attempt
-        if: ${{ always() && steps.guard.outputs.should_run == 'true' }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: unified-next-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
@@ -247,21 +305,110 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Build verified read-only Next contexts
-        if: steps.guard.outputs.should_run == 'true'
-        run: python scripts/build_next_contexts.py --output-dir .staging/next-context
+  assemble:
+    needs: [prepare, bottom, next]
+    if: ${{ needs.prepare.outputs.should_run == 'true' && needs.bottom.result == 'success' && needs.next.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    outputs:
+      run_id: ${{ steps.identity.outputs.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Publish isolated Next and Ryan mode assets
-        if: steps.guard.outputs.should_run == 'true'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
+
+      - name: Install assembly runtime
         run: |
-          python -m stockscout_unified.cli publish-adjusted --mode next --canonical engines/next/frontend/public/data/latest.json --chart-dir engines/next/frontend/public/data/charts --public-dir frontend/public --run-id "${{ steps.identity.outputs.run_id }}" --session-date "${{ steps.guard.outputs.session_date }}" --factor-regime .staging/next-context/factor-regime.json --gmli-context .staging/next-context/gmli-context.json
-          python -m stockscout_unified.cli publish-adjusted --mode ryan-original --canonical engines/next/frontend/public/data/latest.json --chart-dir engines/next/frontend/public/data/charts --public-dir frontend/public --run-id "${{ steps.identity.outputs.run_id }}" --session-date "${{ steps.guard.outputs.session_date }}"
-          python -m stockscout_unified.cli activate --public-dir frontend/public --run-id "${{ steps.identity.outputs.run_id }}" --session-date "${{ steps.guard.outputs.session_date }}"
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.lock
+          python -m pip install -e .
+
+      - name: Create immutable assembly run identity
+        id: identity
+        shell: bash
+        run: echo "run_id=${{ needs.prepare.outputs.session_date }}-eod-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore only compact previous history
+        run: python scripts/restore_compact_history.py
+
+      - name: Download Bottom scanner handoffs across attempts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: unified-bottom-${{ github.run_id }}-*
+          path: .handoff/bottom
+
+      - name: Download Next scanner handoffs across attempts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: unified-next-${{ github.run_id }}-*
+          path: .handoff/next
+
+      - name: Select latest successful scanner handoffs
+        id: handoff
+        shell: bash
+        run: |
+          bottom_dir="$(find .handoff/bottom -mindepth 1 -maxdepth 1 -type d -name 'unified-bottom-${{ github.run_id }}-*' | sort -V | tail -n 1)"
+          next_dir="$(find .handoff/next -mindepth 1 -maxdepth 1 -type d -name 'unified-next-${{ github.run_id }}-*' | sort -V | tail -n 1)"
+          test -n "$bottom_dir" && test -f "$bottom_dir/bottom.json"
+          test -n "$next_dir" && test -f "$next_dir/latest.json" && test -f "$next_dir/manifest.json"
+          echo "bottom_dir=$bottom_dir" >> "$GITHUB_OUTPUT"
+          echo "next_dir=$next_dir" >> "$GITHUB_OUTPUT"
+
+      - name: Rebind and validate Bottom handoff for assembly
+        env:
+          BOTTOM_DIR: ${{ steps.handoff.outputs.bottom_dir }}
+        run: |
+          python -m stockscout_unified.cli rebind-bottom-checkpoint \
+            --checkpoint-dir "$BOTTOM_DIR" \
+            --output-dir .staging \
+            --run-id "${{ steps.identity.outputs.run_id }}" \
+            --session-date "${{ needs.prepare.outputs.session_date }}" \
+            --storage-base-url "https://garrincha077.github.io/StockScout-Unified/data/modes/bottom-fishing/runs/${{ steps.identity.outputs.run_id }}/charts"
+          python -m stockscout_eod.cli health --input .staging/bottom.json
+
+      - name: Materialize and verify Next handoff
+        env:
+          NEXT_DIR: ${{ steps.handoff.outputs.next_dir }}
+          SESSION_DATE: ${{ needs.prepare.outputs.session_date }}
+        run: |
+          mkdir -p engines/next/frontend/public/data .staging
+          cp "$NEXT_DIR/latest.json" engines/next/frontend/public/data/latest.json
+          cp "$NEXT_DIR/manifest.json" engines/next/frontend/public/data/manifest.json
+          rm -rf engines/next/frontend/public/data/charts .staging/next-context
+          cp -a "$NEXT_DIR/charts" engines/next/frontend/public/data/charts
+          cp -a "$NEXT_DIR/next-context" .staging/next-context
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          manifest = json.loads(Path("engines/next/frontend/public/data/manifest.json").read_text())
+          expected = os.environ["SESSION_DATE"]
+          session = manifest.get("marketSession") or {}
+          if session.get("date") != expected or session.get("status") != "closed":
+              raise SystemExit(f"Next handoff session mismatch: {session}")
+          PY
+          python scripts/verify_next_chart_snapshot.py \
+            --canonical engines/next/frontend/public/data/latest.json \
+            --manifest engines/next/frontend/public/data/manifest.json \
+            --chart-dir engines/next/frontend/public/data/charts
+
+      - name: Publish and activate all three isolated modes
+        run: |
+          python -m stockscout_unified.cli publish-bottom --raw-scan .staging/bottom.json --public-dir frontend/public --previous-manifest frontend/public/data/modes/bottom-fishing/manifest.json --chart-manifest ".staging/bottom-charts/${{ steps.identity.outputs.run_id }}/manifest.json" --chart-staging-dir .staging/bottom-charts
+          python -m stockscout_unified.cli publish-adjusted --mode next --canonical engines/next/frontend/public/data/latest.json --chart-dir engines/next/frontend/public/data/charts --public-dir frontend/public --run-id "${{ steps.identity.outputs.run_id }}" --session-date "${{ needs.prepare.outputs.session_date }}" --factor-regime .staging/next-context/factor-regime.json --gmli-context .staging/next-context/gmli-context.json
+          python -m stockscout_unified.cli publish-adjusted --mode ryan-original --canonical engines/next/frontend/public/data/latest.json --chart-dir engines/next/frontend/public/data/charts --public-dir frontend/public --run-id "${{ steps.identity.outputs.run_id }}" --session-date "${{ needs.prepare.outputs.session_date }}"
+          python -m stockscout_unified.cli activate --public-dir frontend/public --run-id "${{ steps.identity.outputs.run_id }}" --session-date "${{ needs.prepare.outputs.session_date }}"
           python -m stockscout_unified.cli verify --public-dir frontend/public
           python -m stockscout_unified.cli notify --public-dir frontend/public --bottom-raw-scan .staging/bottom.json
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        if: steps.guard.outputs.should_run == 'true'
         with:
           node-version: "22"
           cache: npm
@@ -270,16 +417,13 @@ jobs:
             services/mcp/package-lock.json
 
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
-        if: steps.guard.outputs.should_run == 'true'
         with:
           deno-version: v2.9.5
 
       - name: Test OIDC owner operations
-        if: steps.guard.outputs.should_run == 'true'
         run: deno test supabase/functions/unified-operations/index_test.ts
 
       - name: Test and build PWA and MCP
-        if: steps.guard.outputs.should_run == 'true'
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
@@ -291,7 +435,6 @@ jobs:
           npm test --prefix services/mcp
 
       - name: Upload private Telegram render input
-        if: steps.guard.outputs.should_run == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: unified-notify-${{ github.run_id }}-${{ github.run_attempt }}
@@ -301,39 +444,37 @@ jobs:
           retention-days: 1
 
       - name: Upload Pages artifact only after all three modes pass
-        if: steps.guard.outputs.should_run == 'true'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: frontend/dist
           retention-days: 14
 
-      - name: Upload failure diagnostics without runtime market data
+      - name: Upload assembly failure diagnostics
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: unified-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          name: unified-assembly-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             .staging/*.json
-            engines/next/data/daily_scans/latest_optimized_scan.txt
-            engines/next/data/logs/
+            .handoff/
           if-no-files-found: ignore
           include-hidden-files: true
           retention-days: 7
 
   deploy-pages:
-    needs: scan-build
-    if: needs.scan-build.outputs.should_run == 'true'
+    needs: assemble
+    if: needs.assemble.result == 'success'
     uses: ./.github/workflows/deploy-pages.yml
     with:
-      run_id: ${{ needs.scan-build.outputs.run_id }}
+      run_id: ${{ needs.assemble.outputs.run_id }}
     permissions:
       contents: read
       pages: write
       id-token: write
 
   verify-notify:
-    needs: [scan-build, deploy-pages]
-    if: needs.scan-build.outputs.should_run == 'true'
+    needs: [assemble, deploy-pages]
+    if: needs.assemble.result == 'success' && needs.deploy-pages.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -354,15 +495,21 @@ jobs:
         with:
           name: github-pages
           path: .pages
-      - name: Download private Bottom digest input
+      - name: Download private Bottom digest inputs across attempts
         if: ${{ github.event_name == 'schedule' || inputs.notify }}
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: unified-notify-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .notify
-      - name: Extract verified Pages snapshot
+          pattern: unified-notify-${{ github.run_id }}-*
+          path: .notify-handoff
+      - name: Extract verified Pages snapshot and latest Bottom digest input
         if: ${{ github.event_name == 'schedule' || inputs.notify }}
-        run: tar -xf .pages/artifact.tar -C .pages
+        shell: bash
+        run: |
+          tar -xf .pages/artifact.tar -C .pages
+          notify_dir="$(find .notify-handoff -mindepth 1 -maxdepth 1 -type d -name 'unified-notify-${{ github.run_id }}-*' | sort -V | tail -n 1)"
+          test -n "$notify_dir" && test -f "$notify_dir/bottom.json"
+          mkdir -p .notify
+          cp "$notify_dir/bottom.json" .notify/bottom.json
       - name: Evaluate owner alerts for the exact deployed run
         if: ${{ (github.event_name == 'schedule' || inputs.notify) && vars.UNIFIED_DELIVERY_ENDPOINT != '' }}
         run: python -m stockscout_unified.cli evaluate-alerts --public-dir .pages --endpoint "${{ vars.UNIFIED_DELIVERY_ENDPOINT }}" --output .notify/alerts.json
