@@ -72,6 +72,8 @@ jobs:
                   raise SystemExit(f"{mode} manifest run mismatch")
           print(f"run_id={manifest['runId']}")
           print(f"session_date={manifest['sessionDate']}")
+          with Path(os.environ['GITHUB_OUTPUT']).open('a', encoding='utf-8') as output:
+              output.write(f"run_id={manifest['runId']}\n")
           PY
           {
             echo "## Frontend-only immutable deployment"
