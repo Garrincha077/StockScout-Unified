@@ -22,6 +22,63 @@ from stock_scout.utils.logging import get_logger
 
 log = get_logger(__name__)
 
+_TERMINAL_BAR_FIELDS = ("Open", "High", "Low", "Close", "Volume")
+
+
+def _local_dates(frame: pd.DataFrame) -> pd.Index | None:
+    """Return provider timestamps as New York calendar dates when possible."""
+    if frame is None or frame.empty or not isinstance(frame.index, pd.DatetimeIndex):
+        return None
+    index = frame.index
+    if index.tz is not None:
+        index = index.tz_convert("America/New_York")
+    return pd.Index(index.date)
+
+
+def _terminal_row_mask(frame: pd.DataFrame, end: date) -> pd.Series:
+    dates = _local_dates(frame)
+    if dates is None:
+        return pd.Series(False, index=frame.index if frame is not None else None, dtype=bool)
+    return pd.Series(dates == end, index=frame.index, dtype=bool)
+
+
+def _has_complete_terminal_bar(frame: pd.DataFrame, end: date) -> bool:
+    """Whether `frame` contains one complete OHLCV row for `end`."""
+    if frame is None or frame.empty:
+        return False
+    mask = _terminal_row_mask(frame, end)
+    columns = {
+        field: field if field in frame.columns else field.lower()
+        for field in _TERMINAL_BAR_FIELDS
+    }
+    if not mask.any() or any(field not in frame.columns for field in columns.values()):
+        return False
+    terminal = frame.loc[mask, list(columns.values())]
+    numeric = terminal.apply(pd.to_numeric, errors="coerce")
+    return bool(numeric.notna().all(axis=1).any())
+
+
+def _needs_terminal_bar_repair(frame: pd.DataFrame, end: date, interval: str) -> bool:
+    """Detect yfinance's partial final daily row before normalization drops it."""
+    if interval != "1d" or frame is None or frame.empty:
+        return False
+    mask = _terminal_row_mask(frame, end)
+    return bool(mask.any() and not _has_complete_terminal_bar(frame, end))
+
+
+def _replace_terminal_bar(
+    frame: pd.DataFrame, replacement: pd.DataFrame, end: date
+) -> pd.DataFrame:
+    """Replace incomplete rows for `end` with a validated exact-day response."""
+    if not _has_complete_terminal_bar(replacement, end):
+        return frame
+    replacement_mask = _terminal_row_mask(replacement, end)
+    source_mask = _terminal_row_mask(frame, end)
+    return pd.concat(
+        [frame.loc[~source_mask], replacement.loc[replacement_mask]],
+        axis=0,
+    ).sort_index()
+
 
 def _to_yf_symbol(ticker: str) -> str:
     """yfinance uses '-' for class shares (BRK-B not BRK.B)."""
@@ -281,6 +338,36 @@ class YFinanceDataProvider(BaseDataProvider):
                 return pd.DataFrame()
 
             self._pause.record_success()
+            if _needs_terminal_bar_repair(df, end, interval):
+                # Yahoo's chart endpoint can return the terminal session with
+                # OHLC/volume present but a null Close when a wide historical
+                # range is requested.  A precise one-day request returns the
+                # completed bar without weakening the null-close integrity
+                # guard in normalize_ohlcv().
+                try:
+                    self._pause.wait_if_paused()
+                    self._bucket.acquire()
+                    repaired = self._download_once(yf_symbol, end, end, interval, adjusted)
+                    if _has_complete_terminal_bar(repaired, end):
+                        df = _replace_terminal_bar(df, repaired, end)
+                        log.info(
+                            "yfinance.terminal_bar_repaired",
+                            ticker=ticker,
+                            session=end.isoformat(),
+                        )
+                    else:
+                        log.warning(
+                            "yfinance.terminal_bar_repair_incomplete",
+                            ticker=ticker,
+                            session=end.isoformat(),
+                        )
+                except Exception as repair_error:  # noqa: BLE001
+                    log.warning(
+                        "yfinance.terminal_bar_repair_failed",
+                        ticker=ticker,
+                        session=end.isoformat(),
+                        error=str(repair_error)[:200],
+                    )
             # Strip any tz-info so cache parquet roundtrips cleanly.
             if isinstance(df.index, pd.DatetimeIndex) and df.index.tz is not None:
                 df.index = df.index.tz_localize(None)
@@ -342,33 +429,114 @@ class YFinanceDataProvider(BaseDataProvider):
         if data is None or data.empty:
             return out
         self._pause.record_success()
-        multi = isinstance(data.columns, pd.MultiIndex)
-        for yfsym, orig in sym_map.items():
+
+        def extract_symbol_frame(payload, yfsym: str) -> pd.DataFrame:
+            """Extract one raw symbol frame from either yfinance column shape."""
             try:
-                if multi:
-                    if yfsym not in data.columns.get_level_values(0):
-                        continue
-                    sub = data[yfsym]
+                multi_columns = isinstance(payload.columns, pd.MultiIndex)
+                if multi_columns:
+                    if yfsym not in payload.columns.get_level_values(0):
+                        return pd.DataFrame()
+                    subframe = payload[yfsym]
                 else:
-                    sub = data  # single-ticker fallback shape
-                sub = sub.dropna(how="all")
-                if sub.empty:
-                    continue
-                df = pd.DataFrame(
+                    subframe = payload
+                subframe = subframe.dropna(how="all")
+                if subframe.empty:
+                    return pd.DataFrame()
+                frame = pd.DataFrame(
                     {
-                        "open": sub["Open"], "high": sub["High"], "low": sub["Low"],
-                        "close": sub["Close"], "volume": sub["Volume"],
+                        "open": subframe["Open"],
+                        "high": subframe["High"],
+                        "low": subframe["Low"],
+                        "close": subframe["Close"],
+                        "volume": subframe["Volume"],
                     }
                 )
-                if isinstance(df.index, pd.DatetimeIndex) and df.index.tz is not None:
-                    df.index = df.index.tz_localize(None)
-                out[orig] = normalize_ohlcv(df)
+                if isinstance(frame.index, pd.DatetimeIndex) and frame.index.tz is not None:
+                    frame.index = frame.index.tz_localize(None)
+                return frame
+            except Exception as e:  # noqa: BLE001
+                log.debug("yfinance.bulk_symbol_extract_failed", ticker=sym_map.get(yfsym), error=repr(e))
+                return pd.DataFrame()
+
+        raw_by_ticker: dict[str, pd.DataFrame] = {}
+        needs_repair: list[str] = []
+        for yfsym, orig in sym_map.items():
+            try:
+                frame = extract_symbol_frame(data, yfsym)
+                if frame.empty:
+                    continue
+                raw_by_ticker[orig] = frame
+                if _needs_terminal_bar_repair(frame, end, interval):
+                    needs_repair.append(orig)
             except Exception as e:  # noqa: BLE001
                 # Per-symbol slice of a bulk download failed (missing column,
                 # integrity reject, …). Skip just this ticker but log the cause so
                 # a systematic bulk-shape regression doesn't vanish silently.
                 log.debug("yfinance.bulk_symbol_skipped", ticker=orig, error=repr(e))
                 continue
+
+        # A wide Yahoo range can return the final date with a null Close for
+        # every symbol. Requery all affected symbols in one exact-day bulk call
+        # so the repair does not double thousands of per-ticker requests.
+        if needs_repair and interval == "1d":
+            repair_symbols = [yfsym for yfsym, orig in sym_map.items() if orig in needs_repair]
+            repair_end = date.fromordinal(end.toordinal() + 1)
+            repair_kwargs = dict(
+                tickers=repair_symbols,
+                start=end.isoformat(),
+                end=repair_end.isoformat(),
+                interval=interval,
+                auto_adjust=adjusted,
+                actions=False,
+                group_by="ticker",
+                threads=True,
+                progress=False,
+            )
+            try:
+                self._pause.wait_if_paused()
+                self._bucket.acquire()
+                try:
+                    repair_data = self._yf.download(session=self._session, **repair_kwargs)
+                except TypeError:
+                    repair_data = self._yf.download(**repair_kwargs)
+                if repair_data is not None and not repair_data.empty:
+                    self._pause.record_success()
+                    repaired_count = 0
+                    for yfsym, orig in sym_map.items():
+                        if orig not in needs_repair:
+                            continue
+                        replacement = extract_symbol_frame(repair_data, yfsym)
+                        if _has_complete_terminal_bar(replacement, end):
+                            raw_by_ticker[orig] = _replace_terminal_bar(
+                                raw_by_ticker[orig], replacement, end
+                            )
+                            repaired_count += 1
+                    log.info(
+                        "yfinance.bulk_terminal_bars_repaired",
+                        count=repaired_count,
+                        requested=len(needs_repair),
+                        session=end.isoformat(),
+                    )
+                else:
+                    log.warning(
+                        "yfinance.bulk_terminal_bar_repair_empty",
+                        requested=len(needs_repair),
+                        session=end.isoformat(),
+                    )
+            except Exception as repair_error:  # noqa: BLE001
+                log.warning(
+                    "yfinance.bulk_terminal_bar_repair_failed",
+                    requested=len(needs_repair),
+                    session=end.isoformat(),
+                    error=str(repair_error)[:200],
+                )
+
+        for orig, frame in raw_by_ticker.items():
+            try:
+                out[orig] = normalize_ohlcv(frame)
+            except Exception as e:  # noqa: BLE001
+                log.debug("yfinance.bulk_symbol_skipped", ticker=orig, error=repr(e))
         return out
 
     def get_bulk_daily_ohlcv(
