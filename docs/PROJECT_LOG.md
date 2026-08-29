@@ -239,7 +239,6 @@
   universe symbols) before the full provider loop. If the selected session is
   not available, the run now stops in seconds with the provider/date details
   instead of spending nearly an hour before the activation health gate.
-
 ## 2026-08-29 — Owner indicator alerts (phased implementation)
 
 - Added a shared, deterministic indicator module for SMA, SMA-seeded EMA,
