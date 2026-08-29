@@ -1,4 +1,4 @@
-import{drawingTriggered,priceBar,triggered,type AlertRow}from'./index.ts'
+import{drawingTriggered,indicatorEvaluation,priceBar,triggered,type AlertRow}from'./index.ts'
 import{evaluateDrawingGeometry,lineValueAt,rearmAfterClear,utcTimeAtLogicalIndex}from'../_shared/chartGeometry.ts'
 
 function assert(value:unknown,message:string){if(!value)throw new Error(message)}
@@ -50,4 +50,37 @@ Deno.test('ray waits for its UTC anchor and linked drawings do not require a can
 Deno.test('rearm fires once per continuous episode and rearms only after clear',()=>{
   const first=rearmAfterClear(true,true),repeat=rearmAfterClear(first.armed,true),clear=rearmAfterClear(repeat.armed,false),again=rearmAfterClear(clear.armed,true)
   assert(first.triggered&&!repeat.triggered&&!clear.triggered&&again.triggered,'rearm state machine emitted duplicates or failed to rearm')
+})
+
+Deno.test('indicator evaluator detects daily EMA cross and applies confirmations',()=>{
+  const indicatorBars=Array.from({length:90},(_,index)=>{
+    const close=index<89?100-index*.4:200
+    const time=new Date(Date.UTC(2026,0,1+index)).toISOString().slice(0,10)
+    return{time,open:close,high:close+1,low:close-1,close}
+  })
+  const result=indicatorEvaluation({kind:'indicator',signal:'daily_ema_10_20',direction:'up',confirmations:{mode:'all',conditions:[]}},indicatorBars)
+  assert(result.condition&&result.relation==='triggered','daily EMA cross did not trigger')
+  assert(result.previousFast!==null&&result.currentFast!==null&&result.previousSlow!==null&&result.currentSlow!==null,'indicator values were not captured')
+})
+
+Deno.test('weekly indicator alerts wait for a completed weekly session and expose history state',()=>{
+  const bars=Array.from({length:40},(_,index)=>{
+    const close=100+index
+    const time=new Date(Date.UTC(2026,0,1+index)).toISOString().slice(0,10)
+    return{time,open:close,high:close+1,low:close-1,close}
+  })
+  const notCompleted=indicatorEvaluation({kind:'indicator',signal:'weekly_sma_10_20',direction:'up',confirmations:{mode:'all',conditions:[]}},bars)
+  assert(notCompleted.relation==='not_completed','weekly alert evaluated a partial week')
+  const missing=indicatorEvaluation({kind:'indicator',signal:'daily_ema_10_20',direction:'up',confirmations:{mode:'all',conditions:['sma50_daily_up']}},bars.slice(0,25))
+  assert(missing.relation==='insufficient_history','missing indicator history was not reported')
+})
+
+Deno.test('weekly SMA cross fires only on the completed Friday session',()=>{
+  const closes=Array.from({length:22},(_,week)=>week<20?100:week===20?90:120)
+  const weeklyBars=closes.flatMap((close,week)=>Array.from({length:5},(_,day)=>{
+    const time=new Date(Date.UTC(2026,0,5+week*7+day)).toISOString().slice(0,10)
+    return{time,open:close,high:close+1,low:close-1,close}
+  }))
+  const result=indicatorEvaluation({kind:'indicator',signal:'weekly_sma_10_20',direction:'up',confirmations:{mode:'all',conditions:[]}},weeklyBars)
+  assert(result.condition&&result.relation==='triggered'&&result.barDate&&new Date(`${result.barDate}T00:00:00Z`).getUTCDay()===1&&new Date(`${weeklyBars.at(-1)!.time}T00:00:00Z`).getUTCDay()===5,'weekly SMA cross did not fire for the completed Friday session')
 })

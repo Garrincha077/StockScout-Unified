@@ -239,3 +239,24 @@
   universe symbols) before the full provider loop. If the selected session is
   not available, the run now stops in seconds with the provider/date details
   instead of spending nearly an hour before the activation health gate.
+
+## 2026-08-29 — Owner indicator alerts (phased implementation)
+
+- Added a shared, deterministic indicator module for SMA, SMA-seeded EMA,
+  Monday-keyed weekly aggregation, normalized regression slope and cross
+  detection. Daily 10/20 EMA, 50D SMA, weekly 10/20/30/50/200 SMA and 30W
+  slope context now use the same calculations wherever the chart is rendered.
+- Added owner-only indicator alert payload validation and summaries for daily
+  10/20 EMA or completed-weekly 10/20 SMA crosses with optional 50D/30W
+  upsloping confirmations using ALL/ANY semantics.
+- Extended the owner Edge evaluator with indicator history checks, weekly
+  cadence gating, per-bar event keys, rearm-safe state diagnostics and a
+  backward-compatible `diagnostics` JSONB migration. Indicator alerts require
+  a ticker and never alter ranking or scoring.
+- Added the owner chart indicator alert dialog, mobile launcher, MA/slope
+  legend, and safe global-center status handling. The feature can be disabled
+  with `VITE_OWNER_INDICATOR_ALERTS=false` without changing stored alerts.
+- Verification: frontend tests pass 75/75, production frontend build passes,
+  Edge tests pass through a local Node compatibility shim because Deno is not
+  installed in the development environment. No scan or Telegram delivery was
+  run.

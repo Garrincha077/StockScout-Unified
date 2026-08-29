@@ -1,0 +1,2 @@
+.chart-indicator-legend{display:flex;align-items:center;gap:6px;min-width:0;overflow:auto;color:#7893aa;font-size:9px;white-space:nowrap}
+.chart-indicator-legend i{font-style:normal}.chart-indicator-legend i.rising{color:#71e7a5}.chart-indicator-legend i.falling{color:#ff9aa5}

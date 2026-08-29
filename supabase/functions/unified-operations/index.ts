@@ -1,4 +1,5 @@
 import{evaluateDrawingGeometry,rearmAfterClear,type GeometryAlertCondition,type GeometryAlertTarget,type GeometryDrawing,type GeometryEvaluation}from'../_shared/chartGeometry.ts';
+import{buildIndicatorSeries,confirmationsPass,crossed,isUpsloping,normalizedSlope,type IndicatorConfirmation,type IndicatorDirection,type IndicatorSeries,type IndicatorSignal}from'../_shared/indicatorSignals.ts';
 
 const SCHEMA = "stockscout_unified_api";
 const EXPECTED_ISSUER = "https://token.actions.githubusercontent.com";
@@ -24,6 +25,20 @@ export type AlertRow = {
 };
 type PriceBar = { time: string; open: number; high: number; low: number; close: number };
 type ModeDocument = { manifest: Record<string, unknown>; core: Record<string, unknown>; rows: Map<string, Record<string, unknown>> };
+export type IndicatorEvaluation = {
+  condition: boolean;
+  relation: "triggered" | "clear" | "insufficient_history" | "not_completed" | "invalid";
+  signal: IndicatorSignal | null;
+  direction: IndicatorDirection | null;
+  barDate: string | null;
+  previousFast: number | null;
+  currentFast: number | null;
+  previousSlow: number | null;
+  currentSlow: number | null;
+  sma50DailySlope: number | null;
+  sma30WeeklySlope: number | null;
+  confirmations: Record<string, Json>;
+};
 
 function response(status: number, body: Json): Response {
   return new Response(status === 204 ? null : JSON.stringify(body), {
@@ -260,6 +275,69 @@ export function drawingTriggered(payload: Record<string, unknown>, bars: PriceBa
   return drawingEvaluation(payload,drawing,bars).condition;
 }
 
+function indicatorInvalid(relation: IndicatorEvaluation["relation"] = "invalid"): IndicatorEvaluation {
+  return { condition: false, relation, signal: null, direction: null, barDate: null, previousFast: null, currentFast: null, previousSlow: null, currentSlow: null, sma50DailySlope: null, sma30WeeklySlope: null, confirmations: {} };
+}
+
+function latestPair(values: Array<number | null>): [number, number] | null {
+  let current: number | null = null;
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    const value = values[index];
+    if (value === null || !Number.isFinite(value)) continue;
+    if (current === null) current = value;
+    else return [value, current];
+  }
+  return null;
+}
+
+function completedWeeklySession(time: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(time)) return false;
+  const parsed = Date.parse(`${time}T00:00:00.000Z`);
+  return Number.isFinite(parsed) && new Date(parsed).getUTCDay() === 5;
+}
+
+function indicatorConditions(payload: Record<string, unknown>): { mode: "all" | "any"; conditions: IndicatorConfirmation[]; valid: boolean } {
+  const source = payload.confirmations && typeof payload.confirmations === "object" && !Array.isArray(payload.confirmations) ? payload.confirmations as Record<string, unknown> : {};
+  const mode = source.mode === "any" ? "any" : "all";
+  const validMode = source.mode === undefined || source.mode === "all" || source.mode === "any";
+  const rawConditions = Array.isArray(source.conditions) ? source.conditions.map(String) : [];
+  const valid = validMode && rawConditions.every((value) => value === "sma50_daily_up" || value === "sma30_weekly_up");
+  const conditions = [...new Set(rawConditions)].filter((value): value is IndicatorConfirmation => value === "sma50_daily_up" || value === "sma30_weekly_up");
+  return { mode, conditions, valid };
+}
+
+export function indicatorEvaluation(payload: Record<string, unknown>, bars: PriceBar[]): IndicatorEvaluation {
+  const signal = String(payload.signal ?? "") as IndicatorSignal;
+  const direction = String(payload.direction ?? "up") as IndicatorDirection;
+  if (!(signal === "daily_ema_10_20" || signal === "weekly_sma_10_20") || !(["up", "down", "either"] as string[]).includes(direction)) return indicatorInvalid();
+  const series: IndicatorSeries = buildIndicatorSeries(bars.map((bar) => ({ time: bar.time, close: bar.close })));
+  const weekly = signal === "weekly_sma_10_20",expectedInterval = weekly ? "weekly" : "daily";
+  if (String(payload.evaluationInterval ?? expectedInterval) !== expectedInterval || String(payload.rearm ?? "after_clear") !== "after_clear") return { ...indicatorInvalid(), signal, direction };
+  if (weekly && !completedWeeklySession(series.daily.bars.at(-1)?.time ?? "")) return { ...indicatorInvalid("not_completed"), signal, direction, barDate: series.weekly.bars.at(-1)?.time ?? null };
+  const target = weekly ? series.weekly : series.daily;
+  const fast = weekly ? target.sma10 : target.ema10;
+  const slow = weekly ? target.sma20 : target.ema20;
+  const pairFast = latestPair(fast), pairSlow = latestPair(slow);
+  if (!pairFast || !pairSlow || !target.bars.at(-1)) return { ...indicatorInvalid("insufficient_history"), signal, direction, barDate: target.bars.at(-1)?.time ?? null };
+  const sma50Values = series.daily.sma50.filter((value): value is number => value !== null);
+  const sma30Values = series.weekly.sma30.filter((value): value is number => value !== null);
+  const sma50DailySlope = normalizedSlope(sma50Values, 20);
+  const sma30WeeklySlope = normalizedSlope(sma30Values, 8);
+  const configuration = indicatorConditions(payload);
+  if (!configuration.valid) return { ...indicatorInvalid(), signal, direction, barDate: target.bars.at(-1)?.time ?? null };
+  const confirmationResult = confirmationsPass(series, configuration.conditions, configuration.mode);
+  const signalCrossed = crossed(pairFast[0], pairSlow[0], pairFast[1], pairSlow[1], direction);
+  const confirmations: Record<string, Json> = {
+    mode: configuration.mode,
+    selected: configuration.conditions as unknown as Json,
+    sma50DailyUp: isUpsloping(sma50Values, 20),
+    sma30WeeklyUp: isUpsloping(sma30Values, 8),
+  };
+  if (confirmationResult === null) return { condition: false, relation: "insufficient_history", signal, direction, barDate: target.bars.at(-1)!.time, previousFast: pairFast[0], currentFast: pairFast[1], previousSlow: pairSlow[0], currentSlow: pairSlow[1], sma50DailySlope, sma30WeeklySlope, confirmations };
+  const condition = signalCrossed && confirmationResult;
+  return { condition, relation: condition ? "triggered" : "clear", signal, direction, barDate: target.bars.at(-1)!.time, previousFast: pairFast[0], currentFast: pairFast[1], previousSlow: pairSlow[0], currentSlow: pairSlow[1], sma50DailySlope, sma30WeeklySlope, confirmations };
+}
+
 export function triggered(alert: AlertRow, candidate: Record<string, unknown> | undefined, bars: PriceBar[]): boolean {
   const payload = alert.payload ?? {};
   const kind = String(payload.kind ?? "price");
@@ -274,6 +352,7 @@ export function triggered(alert: AlertRow, candidate: Record<string, unknown> | 
     });
   }
   if (kind === "drawing") return drawingTriggered(payload, bars);
+  if (kind === "indicator") return indicatorEvaluation(payload, bars).condition;
   const points = Array.isArray(payload.points) ? payload.points : [];
   const firstPoint = points[0] && typeof points[0] === "object" ? points[0] as Record<string, unknown> : {};
   const target = Number(payload.price ?? firstPoint.price);
@@ -303,7 +382,7 @@ async function evaluateAlerts(body: Record<string, unknown>): Promise<Json> {
   const alerts = await database(`unified_alerts?select=id,user_id,name,ticker,mode,price_basis,payload,drawing_id,updated_at&user_id=eq.${user}&enabled=eq.true`) as AlertRow[];
   const drawingRows = await database(`unified_drawings?select=id,user_id,ticker,mode,price_basis,payload,updated_at&user_id=eq.${user}`) as Array<Record<string,unknown>>;
   const drawings = new Map(drawingRows.map(row=>[String(row.id),row]));
-  const stateRows = await database(`unified_alert_state?select=alert_id,config_version,armed,last_condition&user_id=eq.${user}`) as Array<Record<string,unknown>>;
+  const stateRows = await database(`unified_alert_state?select=alert_id,config_version,armed,last_condition,diagnostics&user_id=eq.${user}`) as Array<Record<string,unknown>>;
   const stateByAlert = new Map(stateRows.map(row=>[String(row.alert_id),row]));
   const modeDocuments = new Map<string, ModeDocument>();
   for (const mode of MODE_IDS) {
@@ -324,11 +403,12 @@ async function evaluateAlerts(body: Record<string, unknown>): Promise<Json> {
     const tickers = alert.ticker ? [alert.ticker.toUpperCase()] : Array.isArray(alert.payload.tickers) ? alert.payload.tickers.slice(0, 100).map(String) : [...rows.keys()];
     for (const ticker of tickers) {
       const normalized = ticker.toUpperCase(), candidate = rows.get(normalized);
-      const kind = String(alert.payload.kind ?? "price"), needsBars = kind === "price" || kind === "drawing";
+      const kind = String(alert.payload.kind ?? "price"), needsBars = kind === "price" || kind === "drawing" || kind === "indicator";
+      if (kind === "indicator" && !alert.ticker) continue;
       const cacheKey = `${alert.mode}:${normalized}`;
       if (needsBars && !barCache.has(cacheKey)) barCache.set(cacheKey, loadBars(pages, alert.mode, normalized, document));
       const bars = needsBars ? await barCache.get(cacheKey)! : [];
-      let didTrigger=false,context:Record<string,Json>={ticker:normalized,name:alert.name,price:bars.at(-1)?.close??Number(candidate?.price??candidate?.close??0),mode:alert.mode};
+      let didTrigger=false,indicator:IndicatorEvaluation|undefined,context:Record<string,Json>={ticker:normalized,name:alert.name,price:bars.at(-1)?.close??Number(candidate?.price??candidate?.close??0),mode:alert.mode};
       const linked=String(alert.payload.kind??"price")==="drawing"&&alert.payload.version===2;
       if(linked){
         const drawing=alert.drawing_id?drawings.get(alert.drawing_id):undefined;
@@ -353,9 +433,26 @@ async function evaluateAlerts(body: Record<string, unknown>): Promise<Json> {
           previousLevel:evaluation.previousLevel,currentLevel:evaluation.currentLevel,sessionDate:bars.at(-1)?.time??"",
           deepLink:`${pages}/?mode=${encodeURIComponent(alert.mode)}&view=screener&ticker=${encodeURIComponent(normalized)}&drawing=${encodeURIComponent(String(drawing.id))}`,
         };
+      }else if(kind==="indicator"){
+        const configurationVersion=String(alert.updated_at??new Date(0).toISOString());
+        const existing=stateByAlert.get(alert.id),stateMatches=String(existing?.config_version??"")===configurationVersion;
+        indicator=indicatorEvaluation(alert.payload,bars);
+        const armed=stateMatches?Boolean(existing?.armed):true;
+        const transition=rearmAfterClear(armed,indicator.condition);
+        const nextArmed=indicator.relation==="insufficient_history"||indicator.relation==="not_completed"?true:transition.armed;
+        didTrigger=indicator.relation==="triggered"&&transition.triggered;
+        nextStates.push({
+          alert_id:alert.id,user_id:user,config_version:configurationVersion,armed:nextArmed,last_condition:indicator.condition,
+          last_relation:indicator.relation,last_run_id:expectedRun,last_session_date:bars.at(-1)?.time??null,
+          previous_price:bars.at(-2)?.close??null,current_price:bars.at(-1)?.close??null,
+          previous_level:indicator.previousSlow,current_level:indicator.currentSlow,
+          evaluated_at:new Date().toISOString(),error:indicator.relation==="invalid"?"Indicator configuration could not be evaluated.":null,
+          diagnostics:{signal:indicator.signal,direction:indicator.direction,barDate:indicator.barDate,previousFast:indicator.previousFast,currentFast:indicator.currentFast,previousSlow:indicator.previousSlow,currentSlow:indicator.currentSlow,sma50DailySlope:indicator.sma50DailySlope,sma30WeeklySlope:indicator.sma30WeeklySlope,confirmations:indicator.confirmations,status:indicator.relation},
+        });
+        context={...context,alertKind:"indicator",signal:indicator.signal,direction:indicator.direction,barDate:indicator.barDate,previousFast:indicator.previousFast,currentFast:indicator.currentFast,previousSlow:indicator.previousSlow,currentSlow:indicator.currentSlow,confirmations:indicator.confirmations,deepLink:`${pages}/?mode=${encodeURIComponent(alert.mode)}&view=screener&ticker=${encodeURIComponent(normalized)}&interval=${encodeURIComponent(String(alert.payload.evaluationInterval??"daily"))}&alert=${encodeURIComponent(alert.id)}`};
       }else didTrigger=triggered(alert,candidate,bars);
       if (!didTrigger) continue;
-      const eventKey = await sha256(`${expectedRun}|${alert.id}|${ticker.toUpperCase()}`);
+      const eventKey = await sha256(kind==="indicator"&&indicator?.barDate?`${alert.id}|${normalized}|${indicator.signal}|${indicator.direction}|${indicator.barDate}`:`${expectedRun}|${alert.id}|${ticker.toUpperCase()}`);
       events.push({
         user_id: user,
         alert_id: alert.id,

@@ -1,0 +1,7 @@
+.chart-dialog fieldset{display:grid;gap:7px;margin:0;padding:9px;border:1px solid #24445d;border-radius:8px}
+.chart-dialog legend{padding:0 4px;color:#9db5c8;font-size:10px}
+.indicator-alert-preview{display:grid;gap:4px;padding:9px;border:1px solid #20425a;border-radius:8px;background:#06121e;color:#89a6bb;font-size:10px}
+.indicator-alert-preview b{color:#d8e8f3}
+.indicator-alert-preview span{line-height:1.35}
+.chart-indicator-mobile-launcher{display:none}
+@media(max-width:680px){.chart-indicator-mobile-launcher{position:absolute;right:8px;bottom:64px;z-index:11;display:block;min-height:44px;padding:8px 10px;border:1px solid #2a9363;border-radius:8px;background:#0d3b29;color:#8df3b8;font-size:10px}}
