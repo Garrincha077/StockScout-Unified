@@ -14,6 +14,11 @@ def test_guard_waits_for_close_then_allows_completed_session() -> None:
     assert after == after.__class__(True, "2026-08-21", "completed_session_ready")
 
 
+def test_guard_uses_latest_session_for_weekend_safe_rollout() -> None:
+    decision = decide_session(now_utc=datetime(2026, 8, 29, 20, 47, tzinfo=UTC))
+    assert decision == decision.__class__(True, "2026-08-28", "completed_session_ready")
+
+
 def test_guard_skips_holiday_and_already_active_session(tmp_path) -> None:
     holiday = decide_session(
         now_utc=datetime(2026, 12, 25, 23, 0, tzinfo=UTC),
