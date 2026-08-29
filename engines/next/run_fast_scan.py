@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 
 from src.data.git_storage_fetcher import GitStorageFetcher
-from src.screening.fast_batch_processor import FastOptimizedBatchProcessor
+from src.screening.resumable_fast_batch_processor import ResumableFastOptimizedBatchProcessor
 import run_optimized_scan
 
 
@@ -26,7 +26,7 @@ if force_refresh_requested():
     GitStorageFetcher._should_refresh_fundamental = _always_refresh
     print("FORCE_FULL_REFRESH=true: bypassing fundamentals cache freshness for scan scoring")
 
-run_optimized_scan.OptimizedBatchProcessor = FastOptimizedBatchProcessor
+run_optimized_scan.OptimizedBatchProcessor = ResumableFastOptimizedBatchProcessor
 
 if __name__ == "__main__":
     run_optimized_scan.main()
