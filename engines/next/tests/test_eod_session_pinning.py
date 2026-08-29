@@ -2,8 +2,9 @@ from datetime import date
 
 import pandas as pd
 
-from run_optimized_scan import report_market_session
-from export_frontend_data_fast import chart_history_window
+import json
+
+from export_frontend_data_fast import chart_history_window, stamp_canonical_market_session
 from src.screening.fast_batch_processor import FastOptimizedBatchProcessor, expected_market_session
 
 
@@ -21,7 +22,10 @@ def test_expected_market_session_and_window_are_pinned(monkeypatch):
     )
 
 
-def test_canonical_report_uses_workflow_session_not_wall_clock(monkeypatch):
+def test_canonical_projection_uses_workflow_session_not_legacy_wall_clock(tmp_path, monkeypatch):
     monkeypatch.setenv("STOCKSCOUT_EXPECTED_SESSION", "2026-08-28")
-    assert report_market_session() == "2026-08-28"
+    canonical = tmp_path / "latest.json"
+    canonical.write_text(json.dumps({"market": {"scanDate": "2026-08-29"}, "universe": [{"ticker": "MEI"}]}))
+    stamp_canonical_market_session(canonical)
+    assert json.loads(canonical.read_text())["market"]["scanDate"] == "2026-08-28"
     assert chart_history_window() == {"start": "2021-08-24", "end": "2026-08-29"}

@@ -229,8 +229,9 @@
   endpoint. A small serial retry targets only histories that lag that session;
   unrecoverable histories are excluded from scoring rather than silently using
   an unbounded fallback from another day.
-- Made the canonical Next report use that same selected session rather than the
-  runner wall clock, and reasserted cache coherence immediately before publish.
+- Made the additive canonical Next projection use that same selected session
+  rather than the frozen legacy report's runner wall clock, and reasserted cache
+  coherence immediately before publish.
   This addresses the two observed fail-closed cases (SPY newer than the universe,
   and a long scan reporting the following calendar day) without changing any
   score, ranking, detector or trade-plan rule.
