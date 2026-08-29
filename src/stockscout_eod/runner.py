@@ -11,6 +11,7 @@ from stock_scout.config.loader import load_config
 from stock_scout.data.cache import ParquetCache
 from stock_scout.data.universe import build_universe, load_smoke_universe
 from stock_scout.pipeline.orchestrator import PipelineRunner
+from stock_scout.utils.dates import history_start
 from stockscout_eod.contracts import RawScanEnvelopeV1, wire_dump
 from stockscout_eod.fingerprints import engine_versions
 from stockscout_eod.jsonio import atomic_write_json, json_compatible
@@ -63,7 +64,7 @@ def validate_probe_dates(
 
 
 def preflight_session(
-    runner: "PipelineRunner",
+    runner: PipelineRunner,
     session_date: date,
     universe: list[str],
     *,
