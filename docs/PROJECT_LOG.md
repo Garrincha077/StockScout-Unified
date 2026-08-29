@@ -259,3 +259,17 @@
   Edge tests pass through a local Node compatibility shim because Deno is not
   installed in the development environment. No scan or Telegram delivery was
   run.
+
+## 2026-08-29 — Frontend-only production rollout (27.8)
+
+- Deployed the Unified frontend to GitHub Pages using the existing immutable
+  artifact from Actions run `33245782219`; no scan was started and no Telegram
+  message was sent.
+- The published root and all three mode manifests identify the exact healthy
+  run `2026-08-27-eod-33245782219-1` with session date `2026-08-27`.
+- Pages smoke verification passed for the root manifest and every mode hash in
+  frontend-only workflow run `33254528461` after fixing the reusable-workflow
+  run-id output propagation.
+- Supabase migration `indicator_alert_diagnostics` is applied and
+  `unified-operations` Edge Function version 5 is active for the owner-state
+  feature.
