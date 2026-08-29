@@ -273,3 +273,18 @@
 - Supabase migration `indicator_alert_diagnostics` is applied and
   `unified-operations` Edge Function version 5 is active for the owner-state
   feature.
+
+## 2026-08-29 — yfinance terminal-bar repair
+
+- Added a validated exact-session retry when Yahoo returns a wide-range daily
+  response whose terminal OHLCV row has a missing field (the observed 28.8.
+  `Close = NaN` case).
+- Bulk yfinance batches repair all affected symbols with one exact-day request,
+  avoiding a second request per ticker across the full universe. No metadata or
+  intraday quote is used to fabricate an EOD close.
+- Added two bounded preflight retries (10s and 30s) so a short provider publish
+  delay can recover before the expensive scan; the guard still fails closed if
+  the session remains incomplete.
+- Verification: actual SPY/QQQ individual and bulk calls returned complete
+  2026-08-28 bars; 165 Python tests passed with 2 documented skips. No scan or
+  Telegram delivery was run by this patch.

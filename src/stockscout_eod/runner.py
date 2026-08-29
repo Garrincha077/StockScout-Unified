@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict
 from datetime import UTC, date, datetime
@@ -12,11 +13,14 @@ from stock_scout.data.cache import ParquetCache
 from stock_scout.data.universe import build_universe, load_smoke_universe
 from stock_scout.pipeline.orchestrator import PipelineRunner
 from stock_scout.utils.dates import history_start
+from stock_scout.utils.logging import get_logger
 from stockscout_eod.contracts import RawScanEnvelopeV1, wire_dump
 from stockscout_eod.fingerprints import engine_versions
 from stockscout_eod.jsonio import atomic_write_json, json_compatible
 
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_PREFLIGHT_RETRY_DELAYS_SECONDS = (10.0, 30.0)
+log = get_logger(__name__)
 
 
 def _frame_last_date(frame) -> date | None:
@@ -73,11 +77,37 @@ def preflight_session(
     """Probe the benchmark and a deterministic universe sample before scanning."""
     start = history_start(runner.settings.cache.daily_history_years, session_date)
     tickers = ["SPY", "QQQ", *universe[: max(0, int(sample_size))]]
-    probed: dict[str, date | None] = {}
-    for ticker in dict.fromkeys(tickers):
-        daily, _, _, _ = runner._fetch_with_fallback(ticker, start, session_date)
-        probed[ticker] = _frame_last_date(daily)
-    validate_probe_dates(probed, session_date)
+    last_error: ValueError | None = None
+    for attempt in range(len(_PREFLIGHT_RETRY_DELAYS_SECONDS) + 1):
+        probed: dict[str, date | None] = {}
+        for ticker in dict.fromkeys(tickers):
+            daily, _, _, _ = runner._fetch_with_fallback(ticker, start, session_date)
+            probed[ticker] = _frame_last_date(daily)
+        try:
+            validate_probe_dates(probed, session_date)
+            if attempt:
+                log.info(
+                    "market_session.preflight_recovered",
+                    attempt=attempt + 1,
+                    session=session_date.isoformat(),
+                )
+            return
+        except ValueError as error:
+            last_error = error
+            if attempt >= len(_PREFLIGHT_RETRY_DELAYS_SECONDS):
+                raise
+            delay = _PREFLIGHT_RETRY_DELAYS_SECONDS[attempt]
+            log.warning(
+                "market_session.preflight_retry",
+                attempt=attempt + 1,
+                next_attempt=attempt + 2,
+                session=session_date.isoformat(),
+                error=str(error),
+                sleep_seconds=delay,
+            )
+            time.sleep(delay)
+    if last_error is not None:  # pragma: no cover - loop always raises/returns
+        raise last_error
 
 
 def _normalized_tickers(values: Iterable[str]) -> list[str]:
