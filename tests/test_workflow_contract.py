@@ -66,8 +66,9 @@ def test_next_resume_checkpoint_is_attempt_scoped_and_identity_pinned() -> None:
     assert "name: unified-next-progress-${{ github.run_id }}-${{ github.run_attempt }}" in workflow
     assert "engines/next/data/batch_results/batch_progress.pkl" in workflow
     assert "STOCKSCOUT_PROGRESS_SOURCE_HASH:" in workflow
+    assert "engines/next/run_resumable_fast_scan.py" in workflow
     assert "engines/next/src/**/*.py" in workflow
-    assert "python run_fast_scan.py --conservative --git-storage --resume" in workflow
+    assert "python run_resumable_fast_scan.py --conservative --git-storage --resume" in workflow
 
 
 def test_assembly_downloads_scanner_handoffs_across_run_attempts() -> None:
