@@ -1,8 +1,9 @@
 """Identity-safe resume support for the fast Next full-market scanner.
 
 The legacy optimized processor already checkpoints every batch, but its pickle did
-not prove which NYSE session, universe, or source/config produced it.  This
-wrapper keeps the scoring path unchanged while making resume fail-closed.
+not prove which NYSE session, universe, or source/config produced it. This
+wrapper keeps the scoring path unchanged while making resume fail-closed and
+emits a compact JSON metrics sidecar for operator observability.
 """
 from __future__ import annotations
 
@@ -20,6 +21,7 @@ from .fast_batch_processor import FastOptimizedBatchProcessor
 logger = logging.getLogger(__name__)
 
 PROGRESS_SCHEMA = "stockscout-next-progress/v1"
+METRICS_SCHEMA = "stockscout-next-metrics/v1"
 SOURCE_HASH_ENV = "STOCKSCOUT_PROGRESS_SOURCE_HASH"
 SESSION_ENV = "STOCKSCOUT_EXPECTED_SESSION"
 
@@ -33,6 +35,7 @@ class ResumableFastOptimizedBatchProcessor(FastOptimizedBatchProcessor):
         self._progress_universe: set[str] = set()
         self.resume_checkpoint_used = False
         self.resume_checkpoint_reason = "not-requested"
+        self.metrics_file = Path(self.results_dir).parent / "logs" / "next_scan_metrics.json"
 
     @staticmethod
     def _identity_digest(identity: dict[str, Any]) -> str:
@@ -47,7 +50,9 @@ class ResumableFastOptimizedBatchProcessor(FastOptimizedBatchProcessor):
         max_price: float,
         min_volume: int,
     ) -> dict[str, Any]:
-        normalized = sorted({str(ticker).strip().upper() for ticker in tickers if str(ticker).strip()})
+        normalized = sorted(
+            {str(ticker).strip().upper() for ticker in tickers if str(ticker).strip()}
+        )
         universe_hash = hashlib.sha256("\n".join(normalized).encode("utf-8")).hexdigest()
         return {
             "schema": PROGRESS_SCHEMA,
@@ -63,6 +68,87 @@ class ResumableFastOptimizedBatchProcessor(FastOptimizedBatchProcessor):
             in {"1", "true", "yes", "on"},
             "processor": "resumable-fast-v1",
         }
+
+    def _rate_limit_count(self) -> int:
+        total = 0
+        for error_type, count in self.error_types.items():
+            example = self.error_examples.get(error_type)
+            message = ""
+            if isinstance(example, (list, tuple)) and len(example) > 1:
+                message = str(example[1]).lower()
+            if any(token in message for token in ("429", "rate limit", "too many requests")):
+                total += int(count)
+        return total
+
+    @staticmethod
+    def _top_counts(values: Dict, limit: int = 5) -> list[dict[str, Any]]:
+        pairs: list[tuple[str, int]] = []
+        for name, raw_count in values.items():
+            try:
+                pairs.append((str(name), int(raw_count)))
+            except (TypeError, ValueError):
+                continue
+        pairs.sort(key=lambda item: (-item[1], item[0]))
+        return [{"name": name, "count": count} for name, count in pairs[:limit]]
+
+    def _write_progress_metrics(
+        self,
+        results: List[Dict],
+        *,
+        status: str | None = None,
+        extra: Dict | None = None,
+    ) -> None:
+        identity = self.progress_identity or {}
+        universe_count = int(identity.get("universeCount") or len(self._progress_universe))
+        processed_count = len(self.processed_tickers)
+        metrics: dict[str, Any] = {
+            "schema": METRICS_SCHEMA,
+            "mode": "next",
+            "status": status or ("complete" if processed_count >= universe_count else "partial"),
+            "sessionDate": str(identity.get("sessionDate") or ""),
+            "universeCount": universe_count,
+            "processedCount": processed_count,
+            "successCount": len(results),
+            "skippedCount": int(self.filtered_count),
+            "failedCount": int(self.error_count),
+            "coveragePct": round(100.0 * processed_count / max(1, universe_count), 2),
+            "analysisCoveragePct": round(100.0 * len(results) / max(1, universe_count), 2),
+            "requestCount": int(self.total_requests),
+            "errorRatePct": round(
+                100.0 * self.error_count / max(1, self.total_requests), 2
+            ),
+            "retryCount": None,
+            "rateLimitCount": self._rate_limit_count(),
+            "resumeCheckpointUsed": bool(self.resume_checkpoint_used),
+            "resumeCheckpointReason": self.resume_checkpoint_reason,
+            "progressIdentitySha256": self._identity_digest(identity),
+            "topErrorClasses": self._top_counts(self.error_types),
+            "topFilterReasons": self._top_counts(self.filter_reasons),
+            "generatedAt": datetime.now().isoformat(),
+        }
+        if extra:
+            if extra.get("processing_time_seconds") is not None:
+                metrics["processingTimeSeconds"] = round(
+                    float(extra["processing_time_seconds"]), 1
+                )
+            if extra.get("price_prefetch_seconds") is not None:
+                metrics["pricePrefetchSeconds"] = round(
+                    float(extra["price_prefetch_seconds"]), 1
+                )
+            if extra.get("price_prefetch_missing") is not None:
+                metrics["pricePrefetchMissing"] = int(extra["price_prefetch_missing"])
+
+        self.metrics_file.parent.mkdir(parents=True, exist_ok=True)
+        temporary = Path(f"{self.metrics_file}.tmp")
+        try:
+            temporary.write_text(
+                json.dumps(metrics, sort_keys=True, indent=2, allow_nan=False) + "\n",
+                encoding="utf-8",
+            )
+            temporary.replace(self.metrics_file)
+        except Exception as exc:
+            logger.warning("Unable to persist Next scan metrics: %s", exc)
+            temporary.unlink(missing_ok=True)
 
     def load_progress(self) -> Dict | None:
         """Load only a checkpoint that exactly matches the current scan identity."""
@@ -93,7 +179,9 @@ class ResumableFastOptimizedBatchProcessor(FastOptimizedBatchProcessor):
 
         processed = progress.get("processed") or []
         results = progress.get("results") or []
-        if not isinstance(processed, list) or not set(processed).issubset(self._progress_universe):
+        if not isinstance(processed, list) or not set(processed).issubset(
+            self._progress_universe
+        ):
             self.resume_checkpoint_reason = "invalid-processed-set"
             logger.warning("Ignoring Next resume checkpoint with invalid processed ticker set")
             return None
@@ -102,7 +190,10 @@ class ResumableFastOptimizedBatchProcessor(FastOptimizedBatchProcessor):
             logger.warning("Ignoring Next resume checkpoint with invalid result payload")
             return None
         for row in results:
-            if not isinstance(row, dict) or str(row.get("ticker") or "").upper() not in self._progress_universe:
+            if (
+                not isinstance(row, dict)
+                or str(row.get("ticker") or "").upper() not in self._progress_universe
+            ):
                 self.resume_checkpoint_reason = "invalid-results"
                 logger.warning("Ignoring Next resume checkpoint with foreign result ticker")
                 return None
@@ -157,6 +248,7 @@ class ResumableFastOptimizedBatchProcessor(FastOptimizedBatchProcessor):
         except Exception as exc:
             logger.error("Error saving identity-safe Next progress: %s", exc)
             temporary.unlink(missing_ok=True)
+        self._write_progress_metrics(results)
 
     def process_batch_parallel(self, tickers: List[str], *args, **kwargs) -> Dict:
         resume_requested = bool(kwargs.get("resume", True))
@@ -174,7 +266,11 @@ class ResumableFastOptimizedBatchProcessor(FastOptimizedBatchProcessor):
         # Production EOD resume must prove the source/config hash. Interactive
         # scans without an immutable session may still use the historical local
         # behavior, but a pinned EOD session never accepts an unversioned pickle.
-        if resume_requested and self.progress_identity["sessionDate"] and not self.progress_identity["sourceHash"]:
+        if (
+            resume_requested
+            and self.progress_identity["sessionDate"]
+            and not self.progress_identity["sourceHash"]
+        ):
             logger.warning("Next resume disabled: %s is missing", SOURCE_HASH_ENV)
             kwargs["resume"] = False
             self.resume_checkpoint_reason = "missing-source-hash"
@@ -197,5 +293,14 @@ class ResumableFastOptimizedBatchProcessor(FastOptimizedBatchProcessor):
             result["phase_results"] = phase_results
             result["resume_checkpoint_used"] = self.resume_checkpoint_used
             result["resume_checkpoint_reason"] = self.resume_checkpoint_reason
-            result["progress_identity_sha256"] = self._identity_digest(self.progress_identity)
+            result["progress_identity_sha256"] = self._identity_digest(
+                self.progress_identity
+            )
+            self._write_progress_metrics(
+                result.get("analyses", []), status="complete", extra=result
+            )
+        else:
+            self._write_progress_metrics(
+                self.current_results, status="failed", extra=result
+            )
         return result
