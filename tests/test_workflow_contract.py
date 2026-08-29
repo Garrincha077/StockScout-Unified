@@ -71,6 +71,22 @@ def test_next_resume_checkpoint_is_attempt_scoped_and_identity_pinned() -> None:
     assert "python run_resumable_fast_scan.py --conservative --git-storage --resume" in workflow
 
 
+def test_scanner_summaries_are_always_written_for_operator_visibility() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    bottom_start = workflow.index("Start Bottom scanner timing")
+    bottom_summary = workflow.index("Summarize Bottom scanner")
+    bottom_handoff = workflow.index("Preserve Bottom scanner handoff")
+    next_start = workflow.index("Start Next scanner timing")
+    next_scan = workflow.index("Run Next scanner (adjusted OHLCV)")
+    next_summary = workflow.index("Summarize Next scanner")
+    next_diagnostics = workflow.index("Preserve Next diagnostics after every attempt")
+    assert bottom_start < bottom_summary < bottom_handoff
+    assert next_start < next_scan < next_summary < next_diagnostics
+    assert workflow.count("--github-summary \"$GITHUB_STEP_SUMMARY\"") >= 2
+    assert "engines/next/data/logs/next_scan_metrics.json" in workflow
+    assert ".staging/bottom-scan-summary.json" in workflow
+
+
 def test_assembly_downloads_scanner_handoffs_across_run_attempts() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     assert "pattern: unified-bottom-${{ github.run_id }}-*" in workflow

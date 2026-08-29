@@ -1,3 +1,4 @@
+import json
 import pickle
 
 from src.screening.fast_batch_processor import FastOptimizedBatchProcessor
@@ -84,3 +85,28 @@ def test_resumed_phase_results_are_rebuilt_from_complete_analysis_set(tmp_path, 
         {"ticker": "BBB", "phase": 4},
     ]
     assert result["progress_identity_sha256"]
+
+
+def test_progress_save_emits_compact_json_metrics(tmp_path, monkeypatch):
+    monkeypatch.setenv("STOCKSCOUT_EXPECTED_SESSION", "2026-08-28")
+    monkeypatch.setenv("STOCKSCOUT_PROGRESS_SOURCE_HASH", "source-a")
+    processor = ResumableFastOptimizedBatchProcessor(results_dir=str(tmp_path / "batch_results"))
+    _identity(processor, ["AAA", "BBB"])
+    processor.processed_tickers = {"AAA"}
+    processor.filtered_count = 1
+    processor.total_requests = 1
+    processor.error_count = 1
+    processor.error_types = {"HTTPError": 1}
+    processor.error_examples = {"HTTPError": ("AAA", "429 Too Many Requests")}
+    processor.filter_reasons = {"low_volume": 1}
+
+    processor.save_progress(["AAA", "BBB"], [])
+
+    metrics = json.loads(processor.metrics_file.read_text(encoding="utf-8"))
+    assert metrics["sessionDate"] == "2026-08-28"
+    assert metrics["universeCount"] == 2
+    assert metrics["processedCount"] == 1
+    assert metrics["coveragePct"] == 50.0
+    assert metrics["rateLimitCount"] == 1
+    assert metrics["topErrorClasses"] == [{"name": "HTTPError", "count": 1}]
+    assert metrics["topFilterReasons"] == [{"name": "low_volume", "count": 1}]
