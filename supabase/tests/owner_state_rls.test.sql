@@ -1,5 +1,5 @@
 begin;
-select plan(27);
+select plan(30);
 
 insert into auth.users (id,email) values
   ('11111111-1111-1111-1111-111111111111','owner@example.test'),
@@ -20,6 +20,9 @@ select ok(has_table_privilege('authenticated','stockscout_unified_api.unified_al
 select ok(not has_table_privilege('authenticated','stockscout_unified_api.unified_alert_state','insert,update,delete'),'frontend cannot mutate server-controlled alert state');
 select ok(has_table_privilege('service_role','stockscout_unified_api.unified_drawings','select'),'evaluator can resolve linked drawing geometry');
 select ok(has_table_privilege('service_role','stockscout_unified_api.unified_alert_state','select,insert,update'),'evaluator can maintain runtime alert state');
+select ok(has_column_privilege('authenticated','stockscout_unified_api.unified_alert_state','diagnostics','select'),'owner can read indicator diagnostics');
+select ok(not has_column_privilege('authenticated','stockscout_unified_api.unified_alert_state','diagnostics','update'),'owner cannot mutate indicator diagnostics');
+select ok(has_column_privilege('service_role','stockscout_unified_api.unified_alert_state','diagnostics','update'),'evaluator can write indicator diagnostics');
 select ok(not has_table_privilege('service_role','stockscout_unified_api.unified_drawings','insert,update,delete'),'evaluator cannot mutate owner drawings');
 
 set local role authenticated;
