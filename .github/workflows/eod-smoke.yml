@@ -105,7 +105,7 @@ jobs:
             --input .staging/bottom-smoke.json \
             --config config/eod.yaml \
             --output .staging/bottom-smoke-charts \
-            --storage-base-url "https://example.invalid/stockscout-smoke/$run_id/charts"
+            --storage-base-url "https://example.invalid/runs/$run_id/charts"
 
       - name: Summarize Bottom smoke
         if: ${{ always() }}
