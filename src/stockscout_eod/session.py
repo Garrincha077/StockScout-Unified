@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.request import Request, urlopen
@@ -50,7 +50,17 @@ def decide_session(
     # The exchange calendar is authoritative; a weekday is not necessarily a session.
     schedule = NYSE.schedule(start_date=target, end_date=target)
     if schedule.empty:
-        return GuardDecision(False, target.isoformat(), "not_a_nyse_session")
+        if requested_date is not None:
+            return GuardDecision(False, target.isoformat(), "not_a_nyse_session")
+
+        # Push-based safe rollouts can happen on weekends/holidays. In that case,
+        # select the most recent actual NYSE session instead of treating the
+        # calendar date of the push as a failed trading session.
+        lookback = NYSE.schedule(start_date=target - timedelta(days=14), end_date=target)
+        if lookback.empty:
+            return GuardDecision(False, target.isoformat(), "not_a_nyse_session")
+        target = lookback.index[-1].date()
+        schedule = NYSE.schedule(start_date=target, end_date=target)
 
     close = schedule.iloc[0]["market_close"].to_pydatetime().astimezone(UTC)
     if now < close:
