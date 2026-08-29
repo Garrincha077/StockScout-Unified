@@ -11,8 +11,10 @@ The original OptimizedBatchProcessor remains untouched as a fallback.
 from __future__ import annotations
 
 import logging
+import os
 import pickle
 import time
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -26,6 +28,26 @@ from ..data.fundamentals_fetcher import fetch_quarterly_financials, analyze_fund
 
 logger = logging.getLogger(__name__)
 
+EXPECTED_SESSION_ENV = "STOCKSCOUT_EXPECTED_SESSION"
+
+
+def expected_market_session() -> date | None:
+    """Return the EOD orchestrator's immutable market-session cutoff, if set.
+
+    The normal interactive scanner deliberately follows Yahoo's latest bar. The
+    Unified EOD workflow is different: its Bottom, Next and Ryan artifacts must
+    all describe one already-selected NYSE session. Keeping this boundary here,
+    at the only batched OHLCV ingress, prevents a long scan crossing midnight or
+    a delayed Yahoo batch from silently mixing sessions.
+    """
+    value = os.getenv(EXPECTED_SESSION_ENV, "").strip()
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise RuntimeError(f"Invalid {EXPECTED_SESSION_ENV}: {value!r}") from exc
+
 
 class FastOptimizedBatchProcessor(OptimizedBatchProcessor):
     """OptimizedBatchProcessor using one batched 5Y market-data pass."""
@@ -37,6 +59,30 @@ class FastOptimizedBatchProcessor(OptimizedBatchProcessor):
         self.price_history_file = Path(self.results_dir) / "price_history_5y.pkl"
         self.price_prefetch_seconds = 0.0
         self.price_prefetch_missing: List[str] = []
+        self.expected_session = expected_market_session()
+        self.price_session_stale: List[str] = []
+
+    def _history_window(self) -> dict[str, str]:
+        """Build a five-year Yahoo range capped at the selected EOD session.
+
+        Yahoo treats ``end`` as exclusive, hence the one-day offset.  A dated
+        range is intentionally used instead of ``period=5y`` when Unified has
+        selected a session; the latter can advance while a scan is running.
+        """
+        if self.expected_session is None:
+            return {"period": "5y"}
+        return {
+            "start": (self.expected_session - timedelta(days=5 * 366)).isoformat(),
+            "end": (self.expected_session + timedelta(days=1)).isoformat(),
+        }
+
+    def _has_expected_session(self, frame: pd.DataFrame | None) -> bool:
+        if self.expected_session is None or frame is None or frame.empty:
+            return frame is not None and not frame.empty
+        try:
+            return pd.Timestamp(frame.index.max()).date() == self.expected_session
+        except (TypeError, ValueError):
+            return False
 
     @staticmethod
     def _normalize_frame(frame: pd.DataFrame) -> pd.DataFrame:
@@ -121,13 +167,13 @@ class FastOptimizedBatchProcessor(OptimizedBatchProcessor):
             # avoids split artifacts in long-term technical indicators.
             raw = yf.download(
                 chunk,
-                period="5y",
                 interval="1d",
                 group_by="ticker",
                 auto_adjust=True,
                 progress=False,
                 threads=threads,
                 timeout=20,
+                **self._history_window(),
             )
         except Exception as exc:
             logger.warning("Batch price download failed for %d symbols: %s", len(chunk), exc)
@@ -171,6 +217,37 @@ class FastOptimizedBatchProcessor(OptimizedBatchProcessor):
                 time.sleep(0.15)
             missing = retry_missing
 
+        # A large Yahoo batch can be one session behind for only part of the
+        # universe. Retry that small stale subset serially, then exclude it from
+        # scoring rather than falling back to an unbounded per-ticker request.
+        # This preserves the invariant that every persisted scan frame belongs
+        # to the EOD session selected by the orchestrator.
+        if self.expected_session is not None:
+            stale = [
+                ticker for ticker in unique
+                if ticker in self.price_history and not self._has_expected_session(self.price_history[ticker])
+            ]
+            if stale:
+                logger.info(
+                    "Retrying %d price histories missing selected session %s",
+                    len(stale), self.expected_session,
+                )
+                for start_idx in range(0, len(stale), 20):
+                    chunk = stale[start_idx:start_idx + 20]
+                    self.price_history.update(self._download_chunk(chunk, threads=False))
+                    time.sleep(0.15)
+            self.price_session_stale = [
+                ticker for ticker in unique
+                if ticker not in self.price_history or not self._has_expected_session(self.price_history.get(ticker))
+            ]
+            for ticker in self.price_session_stale:
+                self.price_history.pop(ticker, None)
+            if self.price_session_stale:
+                logger.warning(
+                    "Excluded %d histories that could not reach selected session %s",
+                    len(self.price_session_stale), self.expected_session,
+                )
+
         self.price_prefetch_missing = missing
         self.price_prefetch_seconds = time.time() - start
         logger.info(
@@ -179,6 +256,9 @@ class FastOptimizedBatchProcessor(OptimizedBatchProcessor):
         )
 
     def fetch_spy_data(self) -> bool:
+        if "SPY" in self.price_session_stale:
+            logger.error("SPY did not reach selected session %s", self.expected_session)
+            return False
         frame = self.price_history.get("SPY")
         if frame is not None and not frame.empty and len(frame) >= 200:
             self.spy_data = frame.tail(252).copy()
@@ -195,6 +275,11 @@ class FastOptimizedBatchProcessor(OptimizedBatchProcessor):
         max_price: float,
         min_volume: int,
     ) -> Optional[Dict]:
+        if ticker in self.price_session_stale:
+            self.filtered_count += 1
+            self.filter_reasons["session_mismatch"] = self.filter_reasons.get("session_mismatch", 0) + 1
+            return None
+
         long_hist = self.price_history.get(ticker)
         if long_hist is None or long_hist.empty:
             # Rare Yahoo omission: retain the proven legacy fallback rather than

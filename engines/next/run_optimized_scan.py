@@ -18,8 +18,9 @@ Usage:
 
 import argparse
 import logging
+import os
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from src.data.universe_fetcher import USStockUniverseFetcher
@@ -40,12 +41,28 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def report_market_session() -> str:
+    """Use Unified's selected completed session in the canonical scan report.
+
+    The report is later parsed into ``latest.json``.  Wall-clock ``now`` is not
+    a market-data timestamp and can cross into the next UTC/calendar day during
+    a long scan, so it must never replace the workflow's explicit cutoff.
+    """
+    value = os.getenv("STOCKSCOUT_EXPECTED_SESSION", "").strip()
+    if not value:
+        return datetime.now().strftime("%Y-%m-%d")
+    try:
+        return date.fromisoformat(value).isoformat()
+    except ValueError as exc:
+        raise ValueError(f"Invalid STOCKSCOUT_EXPECTED_SESSION: {value!r}") from exc
+
+
 def save_report(results, buy_signals, sell_signals, spy_analysis, breadth, output_dir="./data/daily_scans"):
     """Save comprehensive report."""
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    date_str = datetime.now().strftime('%Y-%m-%d')
+    date_str = report_market_session()
 
     output = []
     output.append("="*80)
