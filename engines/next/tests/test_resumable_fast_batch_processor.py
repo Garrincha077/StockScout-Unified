@@ -1,7 +1,10 @@
 import json
 import pickle
 
+import pandas as pd
+
 from src.screening.fast_batch_processor import FastOptimizedBatchProcessor
+from src.screening import resumable_fast_batch_processor as resumable_module
 from src.screening.resumable_fast_batch_processor import ResumableFastOptimizedBatchProcessor
 
 
@@ -22,6 +25,9 @@ def test_resume_checkpoint_requires_exact_identity(tmp_path, monkeypatch):
     _identity(processor, ["AAA", "BBB"])
     processor.processed_tickers = {"AAA"}
     processor.total_requests = 1
+    processor.provider_retry_count = 2
+    processor.provider_timeout_count = 1
+    processor.provider_error_types = {"timeout": 1}
     processor.save_progress(
         ["AAA", "BBB"],
         [{"ticker": "AAA", "phase_info": {"phase": 2}}],
@@ -33,6 +39,9 @@ def test_resume_checkpoint_requires_exact_identity(tmp_path, monkeypatch):
     assert progress is not None
     assert same.resume_checkpoint_used is True
     assert progress["processed"] == ["AAA"]
+    assert same.provider_retry_count == 2
+    assert same.provider_timeout_count == 1
+    assert same.provider_error_types == {"timeout": 1}
 
     monkeypatch.setenv("STOCKSCOUT_EXPECTED_SESSION", "2026-08-27")
     different_session = ResumableFastOptimizedBatchProcessor(results_dir=str(tmp_path))
@@ -99,6 +108,8 @@ def test_progress_save_emits_compact_json_metrics(tmp_path, monkeypatch):
     processor.error_types = {"HTTPError": 1}
     processor.error_examples = {"HTTPError": ("AAA", "429 Too Many Requests")}
     processor.filter_reasons = {"low_volume": 1}
+    processor.provider_retry_count = 2
+    processor.provider_timeout_count = 1
 
     processor.save_progress(["AAA", "BBB"], [])
 
@@ -107,6 +118,64 @@ def test_progress_save_emits_compact_json_metrics(tmp_path, monkeypatch):
     assert metrics["universeCount"] == 2
     assert metrics["processedCount"] == 1
     assert metrics["coveragePct"] == 50.0
+    assert metrics["retryCount"] == 2
     assert metrics["rateLimitCount"] == 1
+    assert metrics["providerTimeoutCount"] == 1
     assert metrics["topErrorClasses"] == [{"name": "HTTPError", "count": 1}]
     assert metrics["topFilterReasons"] == [{"name": "low_volume", "count": 1}]
+
+
+def test_ohlcv_chunk_retries_timeouts_with_bounded_backoff(tmp_path, monkeypatch):
+    calls = 0
+
+    def fake_download(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            raise TimeoutError("provider timed out")
+        index = pd.date_range("2026-08-27", periods=2, freq="D")
+        return pd.DataFrame(
+            {
+                "Open": [10.0, 10.5],
+                "High": [11.0, 11.5],
+                "Low": [9.5, 10.0],
+                "Close": [10.5, 11.0],
+                "Volume": [1000, 1200],
+            },
+            index=index,
+        )
+
+    monkeypatch.setattr(resumable_module.yf, "download", fake_download)
+    monkeypatch.setattr(resumable_module.time, "sleep", lambda _: None)
+    monkeypatch.setattr(resumable_module.random, "uniform", lambda *_: 0.0)
+    processor = ResumableFastOptimizedBatchProcessor(results_dir=str(tmp_path))
+
+    result = processor._download_chunk(["AAA"], threads=False)
+
+    assert calls == 3
+    assert "AAA" in result
+    assert processor.provider_retry_count == 2
+    assert processor.provider_timeout_count == 2
+    assert processor.provider_error_types == {"timeout": 2}
+
+
+def test_ohlcv_rate_limit_retries_stop_after_three_attempts(tmp_path, monkeypatch):
+    calls = 0
+
+    def always_rate_limited(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("429 Too Many Requests")
+
+    monkeypatch.setattr(resumable_module.yf, "download", always_rate_limited)
+    monkeypatch.setattr(resumable_module.time, "sleep", lambda _: None)
+    monkeypatch.setattr(resumable_module.random, "uniform", lambda *_: 0.0)
+    processor = ResumableFastOptimizedBatchProcessor(results_dir=str(tmp_path))
+
+    result = processor._download_chunk(["AAA"], threads=False)
+
+    assert result == {}
+    assert calls == 3
+    assert processor.provider_retry_count == 2
+    assert processor.provider_rate_limit_count == 3
+    assert processor.provider_error_types == {"rate_limit": 3}
