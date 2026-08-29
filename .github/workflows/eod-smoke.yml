@@ -1,0 +1,194 @@
+name: StockScout Unified EOD Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      scan_date:
+        description: "Completed NYSE session (YYYY-MM-DD); blank uses latest completed session"
+        required: false
+        type: string
+      scanner:
+        description: "Scanner boundary to exercise"
+        required: true
+        type: choice
+        default: both
+        options:
+          - both
+          - bottom
+          - next
+
+concurrency:
+  group: stockscout-unified-eod-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      session_date: ${{ steps.guard.outputs.session_date }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
+
+      - name: Install smoke guard runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.lock
+          python -m pip install -e .
+
+      - name: Select one completed NYSE session
+        id: guard
+        shell: bash
+        env:
+          REQUESTED_DATE: ${{ inputs.scan_date }}
+        run: |
+          args=(guard --force --active-manifest https://garrincha077.github.io/StockScout-Unified/data/manifest.json --github-output "$GITHUB_OUTPUT")
+          if [ -n "$REQUESTED_DATE" ]; then args+=(--requested-date "$REQUESTED_DATE"); fi
+          python -m stockscout_eod.cli "${args[@]}"
+          test -n "$(grep '^session_date=' "$GITHUB_OUTPUT" | tail -n 1 | cut -d= -f2-)"
+
+      - name: Verify pinned source contracts
+        run: python scripts/verify_source_pins.py
+
+  bottom-smoke:
+    needs: prepare
+    if: ${{ inputs.scanner == 'both' || inputs.scanner == 'bottom' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
+
+      - name: Install Bottom smoke runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.lock
+          python -m pip install -e .
+
+      - name: Start Bottom smoke timing
+        run: echo "BOTTOM_SMOKE_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Run deterministic Bottom smoke universe
+        env:
+          STOCK_SCOUT_NO_NOTIFY: "1"
+        run: |
+          mkdir -p .staging
+          run_id="${{ needs.prepare.outputs.session_date }}-bottom-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python -m stockscout_eod.cli scan \
+            --config config/eod.yaml \
+            --output .staging/bottom-smoke.json \
+            --session-date "${{ needs.prepare.outputs.session_date }}" \
+            --run-id "$run_id" \
+            --tickers "AAPL,MSFT,NVDA,AMZN,META,GOOGL,JPM,XOM,CAT,COST,UNH,NKE" \
+            --no-notify
+          python -m stockscout_eod.cli health \
+            --input .staging/bottom-smoke.json \
+            --allow-fixture \
+            --min-universe 1 \
+            --min-coverage 90
+          python -m stockscout_eod.cli charts \
+            --input .staging/bottom-smoke.json \
+            --config config/eod.yaml \
+            --output .staging/bottom-smoke-charts \
+            --storage-base-url "https://example.invalid/stockscout-smoke/$run_id/charts"
+
+      - name: Summarize Bottom smoke
+        if: ${{ always() }}
+        run: |
+          python -m stockscout_unified.observability bottom \
+            --input .staging/bottom-smoke.json \
+            --output .staging/bottom-smoke-summary.json \
+            --github-summary "$GITHUB_STEP_SUMMARY" \
+            --started-at "${BOTTOM_SMOKE_STARTED_AT:-0}"
+
+      - name: Upload Bottom smoke diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unified-bottom-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .staging/bottom-smoke.json
+            .staging/bottom-smoke-summary.json
+            .staging/bottom-smoke-charts/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
+
+  next-smoke:
+    needs: prepare
+    if: ${{ inputs.scanner == 'both' || inputs.scanner == 'next' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            engines/next/requirements.lock
+
+      - name: Install Next smoke runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.lock
+          python -m pip install --require-hashes -r engines/next/requirements.lock
+          python -m pip install -e .
+
+      - name: Start Next smoke timing
+        run: echo "NEXT_SMOKE_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Run 100-stock Next smoke
+        working-directory: engines/next
+        env:
+          FORCE_FULL_REFRESH: "false"
+          STOCKSCOUT_EXPECTED_SESSION: ${{ needs.prepare.outputs.session_date }}
+          STOCKSCOUT_PROGRESS_SOURCE_HASH: ${{ hashFiles('engines/next/run_resumable_fast_scan.py', 'engines/next/run_fast_scan.py', 'engines/next/run_optimized_scan.py', 'engines/next/src/**/*.py', 'engines/next/requirements.lock') }}
+        run: |
+          mkdir -p data/daily_scans data/logs data/batch_results frontend/public/data
+          python run_resumable_fast_scan.py \
+            --conservative \
+            --git-storage \
+            --test-mode \
+            --clear-progress
+          python validate_scan_session.py
+
+      - name: Summarize Next smoke
+        if: ${{ always() }}
+        run: |
+          python -m stockscout_unified.observability next \
+            --input engines/next/data/logs/next_scan_metrics.json \
+            --output engines/next/data/logs/next-smoke-summary.json \
+            --github-summary "$GITHUB_STEP_SUMMARY" \
+            --started-at "${NEXT_SMOKE_STARTED_AT:-0}"
+
+      - name: Upload Next smoke diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unified-next-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            engines/next/data/daily_scans/latest_optimized_scan.txt
+            engines/next/data/logs/
+            engines/next/data/batch_results/batch_progress.pkl
+          if-no-files-found: warn
+          retention-days: 7
