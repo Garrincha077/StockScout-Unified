@@ -41,16 +41,33 @@ def test_expensive_bottom_result_is_reusable_and_handed_off_before_assembly() ->
 def test_next_is_split_into_scan_enrich_validation_and_handoff_phases() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     scan = workflow.index("Run Next scanner (adjusted OHLCV)")
+    resume = workflow.index("Preserve Next resume checkpoint after every scanner attempt")
     enrich = workflow.index("Enrich Next and exact Ryan Original capture")
     validate = workflow.index("Validate Next dataset before handoff")
     contexts = workflow.index("Build verified read-only Next contexts")
     stage = workflow.index("Stage validated Next handoff")
     handoff = workflow.index("Preserve Next scanner handoff")
     diagnostics = workflow.index("Preserve Next diagnostics after every attempt")
-    assert scan < enrich < validate < contexts < stage < handoff < diagnostics
+    assert scan < resume < enrich < validate < contexts < stage < handoff < diagnostics
     assert "name: unified-next-${{ github.run_id }}-${{ github.run_attempt }}" in workflow
     assert "name: unified-next-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}" in workflow
     assert "if: ${{ always() }}" in workflow
+
+
+def test_next_resume_checkpoint_is_attempt_scoped_and_identity_pinned() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    download = workflow.index("Download prior-attempt Next resume checkpoints")
+    restore = workflow.index("Restore latest Next resume checkpoint")
+    scan = workflow.index("Run Next scanner (adjusted OHLCV)")
+    preserve = workflow.index("Preserve Next resume checkpoint after every scanner attempt")
+    assert download < restore < scan < preserve
+    assert "if: github.run_attempt > 1" in workflow
+    assert "pattern: unified-next-progress-${{ github.run_id }}-*" in workflow
+    assert "name: unified-next-progress-${{ github.run_id }}-${{ github.run_attempt }}" in workflow
+    assert "engines/next/data/batch_results/batch_progress.pkl" in workflow
+    assert "STOCKSCOUT_PROGRESS_SOURCE_HASH:" in workflow
+    assert "engines/next/src/**/*.py" in workflow
+    assert "python run_fast_scan.py --conservative --git-storage --resume" in workflow
 
 
 def test_assembly_downloads_scanner_handoffs_across_run_attempts() -> None:
