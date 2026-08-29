@@ -150,7 +150,7 @@ jobs:
           if-no-files-found: error
           retention-days: 2
 
-      - name: Run Next and exact Ryan Original capture (adjusted OHLCV)
+      - name: Run Next scanner (adjusted OHLCV)
         if: steps.guard.outputs.should_run == 'true'
         working-directory: engines/next
         env:
@@ -160,6 +160,14 @@ jobs:
           mkdir -p data/daily_scans data/logs data/batch_results frontend/public/data
           python run_fast_scan.py --conservative --git-storage
           python validate_scan_session.py
+
+      - name: Enrich Next and exact Ryan Original capture
+        if: steps.guard.outputs.should_run == 'true'
+        working-directory: engines/next
+        env:
+          FORCE_FULL_REFRESH: ${{ inputs.force_full_refresh || 'false' }}
+          STOCKSCOUT_EXPECTED_SESSION: ${{ steps.guard.outputs.session_date }}
+        run: |
           python hydrate_rich_fundamentals.py
           python export_frontend_data_fast.py
           python enhance_frontend_dataset.py
@@ -172,6 +180,13 @@ jobs:
           python compute_opportunity_v2.py
           python compute_daily_changes.py data/batch_results/previous_frontend.json frontend/public/data/latest.json
           python finalize_opportunity_v2.py
+
+      - name: Validate Next dataset before publish
+        if: steps.guard.outputs.should_run == 'true'
+        working-directory: engines/next
+        env:
+          STOCKSCOUT_EXPECTED_SESSION: ${{ steps.guard.outputs.session_date }}
+        run: |
           python validate_canonical_dataset.py
           # Reassert the same cached-session invariant immediately before
           # publication; no enrichment step may turn an EOD run into a new day.
@@ -181,6 +196,18 @@ jobs:
           python audit_fundamental_evidence.py
           python verify_legacy_baseline.py
           python validate_frontend_charts.py frontend/public --strict --minimum-coverage 0.95
+
+      - name: Preserve Next diagnostics after every attempt
+        if: ${{ always() && steps.guard.outputs.should_run == 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unified-next-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            engines/next/data/daily_scans/latest_optimized_scan.txt
+            engines/next/data/logs/
+            engines/next/frontend/public/data/latest.json
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Build verified read-only Next contexts
         if: steps.guard.outputs.should_run == 'true'
