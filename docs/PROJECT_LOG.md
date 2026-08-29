@@ -221,3 +221,16 @@
   overlay end before the strip, so the controls cannot hide price action.
 - Ryan remains read-only and does not receive the owner-tools strip. Added a
   mobile E2E assertion that the dock starts at or below the chart bounds.
+
+## 2026-08-29 — Unified EOD session-pinning recovery
+
+- Pinned the Next batched Yahoo OHLCV ingress to the immutable NYSE session
+  selected by the Unified orchestrator instead of its moving `period=5y`
+  endpoint. A small serial retry targets only histories that lag that session;
+  unrecoverable histories are excluded from scoring rather than silently using
+  an unbounded fallback from another day.
+- Made the canonical Next report use that same selected session rather than the
+  runner wall clock, and reasserted cache coherence immediately before publish.
+  This addresses the two observed fail-closed cases (SPY newer than the universe,
+  and a long scan reporting the following calendar day) without changing any
+  score, ranking, detector or trade-plan rule.

@@ -173,6 +173,9 @@ jobs:
           python compute_daily_changes.py data/batch_results/previous_frontend.json frontend/public/data/latest.json
           python finalize_opportunity_v2.py
           python validate_canonical_dataset.py
+          # Reassert the same cached-session invariant immediately before
+          # publication; no enrichment step may turn an EOD run into a new day.
+          python validate_scan_session.py
           python audit_group_leadership.py
           python audit_pipeline_models.py
           python audit_fundamental_evidence.py

@@ -8,8 +8,10 @@ and normalizes the upstream VCP key before the StockScout row scorer sees it.
 from __future__ import annotations
 
 import json
+import os
 import pickle
 import time
+from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -18,6 +20,22 @@ import yfinance as yf
 import export_frontend_data as base
 
 PRICE_CACHE = Path("data/batch_results/price_history_5y.pkl")
+
+
+def chart_history_window() -> dict[str, str]:
+    """Keep rare chart-recovery requests inside Unified's selected session."""
+    value = os.getenv("STOCKSCOUT_EXPECTED_SESSION", "").strip()
+    if not value:
+        return {"period": "5y"}
+    try:
+        cutoff = date.fromisoformat(value)
+    except ValueError as exc:
+        raise RuntimeError(f"Invalid STOCKSCOUT_EXPECTED_SESSION: {value!r}") from exc
+    # Yahoo's end bound is exclusive.
+    return {
+        "start": (cutoff - timedelta(days=5 * 366)).isoformat(),
+        "end": (cutoff + timedelta(days=1)).isoformat(),
+    }
 
 
 def normalize_vcp_data(value: dict | None) -> dict:
@@ -45,12 +63,12 @@ def download_adjusted_batch(chunk: list[str], spy_close: pd.Series, threads: boo
     try:
         download = yf.download(
             chunk,
-            period="5y",
             interval="1d",
             group_by="ticker",
             auto_adjust=True,
             progress=False,
             threads=threads,
+            **chart_history_window(),
         )
     except Exception as exc:
         print(f"  adjusted chart batch failed: {exc}")
@@ -72,7 +90,9 @@ def build_adjusted_five_year_chart_shards(tickers: list[str]) -> dict[str, str]:
         old.unlink()
 
     print(f"Fetching adjusted 5Y chart history for {len(tickers):,} analyzed tickers")
-    spy_df = yf.download("SPY", period="5y", interval="1d", auto_adjust=True, progress=False, threads=False)
+    spy_df = yf.download(
+        "SPY", interval="1d", auto_adjust=True, progress=False, threads=False, **chart_history_window()
+    )
     if isinstance(spy_df.columns, pd.MultiIndex):
         if "SPY" in spy_df.columns.get_level_values(0):
             spy_df = spy_df["SPY"]
