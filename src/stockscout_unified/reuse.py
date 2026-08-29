@@ -9,6 +9,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import shutil
 from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -307,6 +308,90 @@ def build_bottom_charts_from_store(
     )
     atomic_write_json(output_root / "manifest.json", wire_dump(manifest))
     return manifest
+
+
+def rebind_bottom_checkpoint(
+    checkpoint_dir: str | Path,
+    *,
+    output_dir: str | Path,
+    run_id: str,
+    expected_session_date: str,
+    storage_base_url: str,
+) -> tuple[Path, ChartManifestV1]:
+    """Reuse a verified Bottom scan/charts checkpoint under a fresh run identity.
+
+    The expensive detector output and chart shard bytes remain unchanged.  Only
+    run-scoped metadata is rebound after strict session, price-basis, coverage,
+    and shard-hash validation.
+    """
+    checkpoint_root = Path(checkpoint_dir).resolve()
+    scan = RawScanEnvelopeV1.model_validate_json((checkpoint_root / "bottom.json").read_bytes())
+    if scan.session_date != expected_session_date:
+        raise ValueError(
+            f"Bottom checkpoint session {scan.session_date} does not match {expected_session_date}"
+        )
+    if scan.price_mode != "split_only":
+        raise ValueError("Bottom checkpoint price basis is not split_only")
+
+    source_run_id = scan.run_id
+    source_chart_root = checkpoint_root / "bottom-charts" / source_run_id
+    charts = ChartManifestV1.model_validate_json((source_chart_root / "manifest.json").read_bytes())
+    if charts.run_id != source_run_id or charts.session_date != expected_session_date:
+        raise ValueError("Bottom checkpoint chart identity mismatch")
+    if charts.price_mode != "split_only":
+        raise ValueError("Bottom checkpoint charts are not split_only")
+    if charts.coverage_pct < 95.0:
+        raise ValueError(
+            f"Bottom checkpoint chart coverage is {charts.coverage_pct:.2f}%, expected at least 95%"
+        )
+
+    parsed_url = urlsplit(storage_base_url.strip())
+    expected_suffix = f"/runs/{run_id}/charts"
+    if (
+        parsed_url.scheme != "https"
+        or not parsed_url.hostname
+        or parsed_url.username
+        or parsed_url.password
+        or parsed_url.query
+        or parsed_url.fragment
+        or not parsed_url.path.endswith(expected_suffix)
+    ):
+        raise ValueError("chart storage URL must be an HTTPS run-scoped Pages URL")
+
+    source_shards = source_chart_root / "shards"
+    for shard in charts.shards:
+        shard_path = source_shards / f"{shard.name}.json.gz"
+        payload = shard_path.read_bytes()
+        if len(payload) != shard.bytes or sha256_bytes(payload) != shard.sha256:
+            raise ValueError(f"Bottom checkpoint chart shard hash mismatch: {shard.name}")
+
+    output_root = Path(output_dir).resolve()
+    output_root.mkdir(parents=True, exist_ok=True)
+    raw_payload = wire_dump(scan)
+    raw_payload["runId"] = run_id
+    provenance = dict(raw_payload.get("provenance") or {})
+    provenance["checkpointReuse"] = True
+    provenance["checkpointSourceRunId"] = source_run_id
+    raw_payload["provenance"] = provenance
+    rebound_scan = RawScanEnvelopeV1.model_validate(raw_payload)
+    raw_path = output_root / "bottom.json"
+    atomic_write_json(raw_path, wire_dump(rebound_scan))
+
+    destination_chart_root = output_root / "bottom-charts" / run_id
+    destination_shards = destination_chart_root / "shards"
+    destination_shards.mkdir(parents=True, exist_ok=True)
+    for shard in charts.shards:
+        shutil.copyfile(
+            source_shards / f"{shard.name}.json.gz",
+            destination_shards / f"{shard.name}.json.gz",
+        )
+
+    chart_payload = wire_dump(charts)
+    chart_payload["runId"] = run_id
+    chart_payload["storageBaseUrl"] = storage_base_url
+    rebound_charts = ChartManifestV1.model_validate(chart_payload)
+    atomic_write_json(destination_chart_root / "manifest.json", wire_dump(rebound_charts))
+    return raw_path, rebound_charts
 
 
 def prepare_bottom_reuse(

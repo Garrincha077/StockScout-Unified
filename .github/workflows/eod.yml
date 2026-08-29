@@ -127,8 +127,16 @@ jobs:
         if: steps.guard.outputs.should_run == 'true'
         run: python scripts/restore_compact_history.py
 
-      - name: Run Bottom Fishing (split-only, notifications disabled)
+      - name: Restore same-session Bottom checkpoint
+        id: bottom_checkpoint
         if: steps.guard.outputs.should_run == 'true'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .staging/bottom-checkpoint
+          key: unified-bottom-v1-${{ runner.os }}-${{ steps.guard.outputs.session_date }}-${{ hashFiles('config/eod.yaml', 'src/stockscout_eod/**/*.py', 'requirements.lock') }}
+
+      - name: Run Bottom Fishing scan and charts on cache miss
+        if: ${{ steps.guard.outputs.should_run == 'true' && steps.bottom_checkpoint.outputs.cache-hit != 'true' }}
         env:
           STOCK_SCOUT_NO_NOTIFY: "1"
         run: |
@@ -136,7 +144,37 @@ jobs:
           python -m stockscout_eod.cli scan --config config/eod.yaml --output .staging/bottom.json --session-date "${{ steps.guard.outputs.session_date }}" --run-id "${{ steps.identity.outputs.run_id }}" --no-notify
           python -m stockscout_eod.cli health --input .staging/bottom.json
           python -m stockscout_eod.cli charts --input .staging/bottom.json --config config/eod.yaml --output .staging/bottom-charts --storage-base-url "https://garrincha077.github.io/StockScout-Unified/data/modes/bottom-fishing/runs/${{ steps.identity.outputs.run_id }}/charts"
+
+      - name: Rebind cached Bottom checkpoint to current run
+        if: ${{ steps.guard.outputs.should_run == 'true' && steps.bottom_checkpoint.outputs.cache-hit == 'true' }}
+        run: |
+          python -m stockscout_unified.cli rebind-bottom-checkpoint \
+            --checkpoint-dir .staging/bottom-checkpoint \
+            --output-dir .staging \
+            --run-id "${{ steps.identity.outputs.run_id }}" \
+            --session-date "${{ steps.guard.outputs.session_date }}" \
+            --storage-base-url "https://garrincha077.github.io/StockScout-Unified/data/modes/bottom-fishing/runs/${{ steps.identity.outputs.run_id }}/charts"
+
+      - name: Validate and publish Bottom Fishing checkpoint
+        if: steps.guard.outputs.should_run == 'true'
+        run: |
+          python -m stockscout_eod.cli health --input .staging/bottom.json
           python -m stockscout_unified.cli publish-bottom --raw-scan .staging/bottom.json --public-dir frontend/public --previous-manifest frontend/public/data/modes/bottom-fishing/manifest.json --chart-manifest ".staging/bottom-charts/${{ steps.identity.outputs.run_id }}/manifest.json" --chart-staging-dir .staging/bottom-charts
+
+      - name: Stage fresh Bottom checkpoint for reuse
+        if: ${{ steps.guard.outputs.should_run == 'true' && steps.bottom_checkpoint.outputs.cache-hit != 'true' }}
+        run: |
+          rm -rf .staging/bottom-checkpoint
+          mkdir -p .staging/bottom-checkpoint
+          cp .staging/bottom.json .staging/bottom-checkpoint/bottom.json
+          cp -a .staging/bottom-charts .staging/bottom-checkpoint/bottom-charts
+
+      - name: Save reusable Bottom checkpoint before Next
+        if: ${{ steps.guard.outputs.should_run == 'true' && steps.bottom_checkpoint.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .staging/bottom-checkpoint
+          key: unified-bottom-v1-${{ runner.os }}-${{ steps.guard.outputs.session_date }}-${{ hashFiles('config/eod.yaml', 'src/stockscout_eod/**/*.py', 'requirements.lock') }}
 
       - name: Preserve resumable Bottom checkpoint before Next
         if: steps.guard.outputs.should_run == 'true'

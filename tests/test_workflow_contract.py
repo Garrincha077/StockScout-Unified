@@ -7,9 +7,20 @@ RECOVERY_WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows
 
 def test_expensive_bottom_result_is_checkpointed_before_next() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
+    restore = workflow.index("Restore same-session Bottom checkpoint")
+    scan = workflow.index("Run Bottom Fishing scan and charts on cache miss")
+    rebind = workflow.index("Rebind cached Bottom checkpoint to current run")
+    publish = workflow.index("Validate and publish Bottom Fishing checkpoint")
+    save = workflow.index("Save reusable Bottom checkpoint before Next")
     checkpoint = workflow.index("Preserve resumable Bottom checkpoint before Next")
     next_scan = workflow.index("Run Next scanner (adjusted OHLCV)")
-    assert checkpoint < next_scan
+    assert restore < scan < rebind < publish < save < checkpoint < next_scan
+    assert "actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830" in workflow
+    assert "actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830" in workflow
+    assert "steps.bottom_checkpoint.outputs.cache-hit != 'true'" in workflow
+    assert "steps.bottom_checkpoint.outputs.cache-hit == 'true'" in workflow
+    assert "rebind-bottom-checkpoint" in workflow
+    assert "unified-bottom-v1-${{ runner.os }}-${{ steps.guard.outputs.session_date }}" in workflow
     assert "name: unified-bottom-${{ github.run_id }}-${{ github.run_attempt }}" in workflow
     assert workflow.count("include-hidden-files: true") >= 3
 
