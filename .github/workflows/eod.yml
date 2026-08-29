@@ -229,15 +229,46 @@ jobs:
           restore-keys: |
             unified-next-market-${{ runner.os }}-
 
+      - name: Download prior-attempt Next resume checkpoints
+        if: github.run_attempt > 1
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: unified-next-progress-${{ github.run_id }}-*
+          path: .next-progress-handoff
+
+      - name: Restore latest Next resume checkpoint
+        if: github.run_attempt > 1
+        shell: bash
+        run: |
+          checkpoint="$(find .next-progress-handoff -type f -name batch_progress.pkl 2>/dev/null | sort -V | tail -n 1 || true)"
+          if [ -n "$checkpoint" ]; then
+            mkdir -p engines/next/data/batch_results
+            cp "$checkpoint" engines/next/data/batch_results/batch_progress.pkl
+            echo "Restored prior-attempt Next progress checkpoint: $checkpoint" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No prior-attempt Next progress checkpoint was available; scanner will start clean." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Run Next scanner (adjusted OHLCV)
         working-directory: engines/next
         env:
           FORCE_FULL_REFRESH: ${{ inputs.force_full_refresh || 'false' }}
           STOCKSCOUT_EXPECTED_SESSION: ${{ needs.prepare.outputs.session_date }}
+          STOCKSCOUT_PROGRESS_SOURCE_HASH: ${{ hashFiles('engines/next/run_fast_scan.py', 'engines/next/run_optimized_scan.py', 'engines/next/src/**/*.py', 'engines/next/requirements.lock') }}
         run: |
           mkdir -p data/daily_scans data/logs data/batch_results frontend/public/data
-          python run_fast_scan.py --conservative --git-storage
+          python run_fast_scan.py --conservative --git-storage --resume
           python validate_scan_session.py
+
+      - name: Preserve Next resume checkpoint after every scanner attempt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unified-next-progress-${{ github.run_id }}-${{ github.run_attempt }}
+          path: engines/next/data/batch_results/batch_progress.pkl
+          if-no-files-found: warn
+          retention-days: 2
 
       - name: Enrich Next and exact Ryan Original capture
         working-directory: engines/next
