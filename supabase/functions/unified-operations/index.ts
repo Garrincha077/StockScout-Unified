@@ -315,8 +315,8 @@ export function indicatorEvaluation(payload: Record<string, unknown>, bars: Pric
   if (String(payload.evaluationInterval ?? expectedInterval) !== expectedInterval || String(payload.rearm ?? "after_clear") !== "after_clear") return { ...indicatorInvalid(), signal, direction };
   if (weekly && !completedWeeklySession(series.daily.bars.at(-1)?.time ?? "")) return { ...indicatorInvalid("not_completed"), signal, direction, barDate: series.weekly.bars.at(-1)?.time ?? null };
   const target = weekly ? series.weekly : series.daily;
-  const fast = weekly ? target.sma10 : target.ema10;
-  const slow = weekly ? target.sma20 : target.ema20;
+  const fast = weekly ? series.weekly.sma10 : series.daily.ema10;
+  const slow = weekly ? series.weekly.sma20 : series.daily.ema20;
   const pairFast = latestPair(fast), pairSlow = latestPair(slow);
   if (!pairFast || !pairSlow || !target.bars.at(-1)) return { ...indicatorInvalid("insufficient_history"), signal, direction, barDate: target.bars.at(-1)?.time ?? null };
   const sma50Values = series.daily.sma50.filter((value): value is number => value !== null);
