@@ -373,6 +373,14 @@ async function sha256(value: string): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+function normalizedAlertStates(states: Record<string, Json>[]): Record<string, Json>[] {
+  const columns = [
+    "alert_id", "user_id", "config_version", "armed", "last_condition", "last_relation", "last_run_id",
+    "last_session_date", "previous_price", "current_price", "previous_level", "current_level", "evaluated_at", "error", "diagnostics",
+  ] as const;
+  return states.map((state) => Object.fromEntries(columns.map((column) => [column, column === "diagnostics" ? (state[column] ?? {}) : (state[column] ?? null)])) as Record<string, Json>);
+}
+
 async function evaluateAlerts(body: Record<string, unknown>): Promise<Json> {
   const expectedRun = text(body.runId, "runId", 160);
   const pages = UNIFIED_PAGES_BASE_URL;
@@ -464,23 +472,23 @@ async function evaluateAlerts(body: Record<string, unknown>): Promise<Json> {
       });
     }
   }
-  if(nextStates.length)await database("unified_alert_state?on_conflict=alert_id,user_id",{method:"POST",body:JSON.stringify(nextStates)});
+  if(nextStates.length)await database("unified_alert_state?on_conflict=alert_id,user_id",{method:"POST",body:JSON.stringify(normalizedAlertStates(nextStates))});
   if (events.length) await database("unified_alert_events?on_conflict=user_id,event_key", { method: "POST", headers: { prefer: "return=representation,resolution=ignore-duplicates" }, body: JSON.stringify(events) });
   return { runId: expectedRun, events: events.map((event) => event.payload as Json) };
 }
 
 if (import.meta.main) Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return response(204, null);
-  if (request.method !== "POST") return response(405, { error: "method_not_allowed" });
+  if (request.method !== "POST") return response(405, { ok: false, error: "method_not_allowed" });
   try {
     await verifyGithubOidc(request);
     const body = await request.json() as Record<string, unknown>;
     const action = text(body.action, "action", 40);
-    if (action === "delivery_get") return response(200, await deliveryGet(body));
-    if (action === "delivery_mark") return response(200, await deliveryMark(body));
-    if (action === "evaluate_alerts") return response(200, await evaluateAlerts(body));
-    return response(400, { error: "unsupported_action" });
+    if (action === "delivery_get") return response(200, { ok: true, data: await deliveryGet(body) });
+    if (action === "delivery_mark") return response(200, { ok: true, data: await deliveryMark(body) });
+    if (action === "evaluate_alerts") return response(200, { ok: true, data: await evaluateAlerts(body) });
+    return response(400, { ok: false, error: "unsupported_action" });
   } catch (error) {
-    return response(400, { error: error instanceof Error ? error.message : String(error) });
+    return response(400, { ok: false, error: error instanceof Error ? error.message : String(error) });
   }
 });
