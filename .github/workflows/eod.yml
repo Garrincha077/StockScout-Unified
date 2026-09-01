@@ -411,10 +411,21 @@ jobs:
         id: handoff
         shell: bash
         run: |
-          bottom_dir="$(find .handoff/bottom -mindepth 1 -maxdepth 1 -type d -name 'unified-bottom-${{ github.run_id }}-*' | sort -V | tail -n 1)"
-          next_dir="$(find .handoff/next -mindepth 1 -maxdepth 1 -type d -name 'unified-next-${{ github.run_id }}-*' | sort -V | tail -n 1)"
-          test -n "$bottom_dir" && test -f "$bottom_dir/bottom.json"
-          test -n "$next_dir" && test -f "$next_dir/latest.json" && test -f "$next_dir/manifest.json"
+          bottom_file="$(find .handoff/bottom -maxdepth 2 -type f -name bottom.json | sort -V | tail -n 1)"
+          next_manifest="$(find .handoff/next -maxdepth 2 -type f -name manifest.json | sort -V | tail -n 1)"
+          if [ -z "$bottom_file" ]; then
+            echo "::error::No Bottom handoff containing bottom.json was downloaded"
+            exit 1
+          fi
+          if [ -z "$next_manifest" ]; then
+            echo "::error::No Next handoff containing manifest.json was downloaded"
+            exit 1
+          fi
+          bottom_dir="$(dirname "$bottom_file")"
+          next_dir="$(dirname "$next_manifest")"
+          test -f "$next_dir/latest.json"
+          test -d "$next_dir/charts"
+          test -d "$next_dir/next-context"
           echo "bottom_dir=$bottom_dir" >> "$GITHUB_OUTPUT"
           echo "next_dir=$next_dir" >> "$GITHUB_OUTPUT"
 
@@ -564,10 +575,13 @@ jobs:
         shell: bash
         run: |
           tar -xf .pages/artifact.tar -C .pages
-          notify_dir="$(find .notify-handoff -mindepth 1 -maxdepth 1 -type d -name 'unified-notify-${{ github.run_id }}-*' | sort -V | tail -n 1)"
-          test -n "$notify_dir" && test -f "$notify_dir/bottom.json"
+          notify_file="$(find .notify-handoff -maxdepth 2 -type f -name bottom.json | sort -V | tail -n 1)"
+          if [ -z "$notify_file" ]; then
+            echo "::error::No private Bottom digest input was downloaded"
+            exit 1
+          fi
           mkdir -p .notify
-          cp "$notify_dir/bottom.json" .notify/bottom.json
+          cp "$notify_file" .notify/bottom.json
       - name: Evaluate owner alerts for the exact deployed run
         if: ${{ (github.event_name == 'schedule' || inputs.notify) && vars.UNIFIED_DELIVERY_ENDPOINT != '' }}
         run: python -m stockscout_unified.cli evaluate-alerts --public-dir .pages --endpoint "${{ vars.UNIFIED_DELIVERY_ENDPOINT }}" --output .notify/alerts.json
