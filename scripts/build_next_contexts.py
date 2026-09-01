@@ -145,7 +145,7 @@ def ensure_local_next_handoff_manifest() -> bool:
 
     canonical = _load(latest)
     manifest = _load(manifest_path)
-    expected_session = str(((canonical.get("market") or {}).get("scanDate") or "")).strip()
+    expected_session = str((canonical.get("market") or {}).get("scanDate") or "").strip()
     session = manifest.get("marketSession") or {}
     if expected_session and session != {
         "date": expected_session,
