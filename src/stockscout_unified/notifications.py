@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -122,10 +123,13 @@ def _drawing_alert_parts(session_date: str, rows: list[dict[str, Any]]) -> list[
 def _ma_cluster_parts(scan_path: str | Path) -> list[str]:
     payload = json.loads(Path(scan_path).read_text(encoding="utf-8"))
     candidates = [Candidate.model_validate(row) for row in payload.get("candidates") or []]
+
     def relvol(candidate: Candidate) -> float:
         return float(candidate.current_thrust_rel_volume or candidate.rwb_thrust_rel_volume or candidate.rvol_today or 0.0)
+
     def width(candidate: Candidate) -> float:
         return float(candidate.ma_cluster_width_pct or candidate.sma_compression_pct or candidate.weekly_stack_width_pct or 999.0)
+
     triggered = [candidate for candidate in candidates if (candidate.ma_cluster_score or 0) > 0 and relvol(candidate) >= 2.0]
     selected = sorted(triggered, key=lambda candidate: (candidate.ma_cluster_score or 0, relvol(candidate), -width(candidate)), reverse=True)[:25]
     nearest = False
@@ -205,6 +209,19 @@ def evaluate_owner_alerts(
     return result
 
 
+def _wire_safe_parts(parts: list[str]) -> list[str]:
+    """Escape stray MarkdownV2 pipes without changing the durable content identity.
+
+    Historic Bottom renderers contain a few literal ``|`` separators while the
+    rest of the message is already valid MarkdownV2.  Escaping only an
+    unescaped pipe at the final wire boundary fixes Telegram parsing while the
+    delivery ledger continues to hash the canonical pre-wire parts.  A retry
+    can therefore resume after already delivered parts instead of duplicating
+    them.
+    """
+    return [re.sub(r"(?<!\\)\|", r"\\|", part) for part in parts]
+
+
 def deliver_series(series: dict[str, list[str]], *, endpoint: str) -> bool:
     cfg, ledger = _telegram_config(), OidcLedger(endpoint)
     for name, parts in series.items():
@@ -212,8 +229,11 @@ def deliver_series(series: dict[str, list[str]], *, endpoint: str) -> bool:
         progress = ledger.get(name, content_hash, len(parts))
         if progress.completed:
             continue
+
         def on_sent(sent: int, total: int, *, series_name: str = name, digest: str = content_hash) -> None:
             ledger.mark(series_name, digest, total, sent)
-        if not send_message_parts(cfg, parts, start_part=progress.last_part, on_part_sent=on_sent):
+
+        wire_parts = _wire_safe_parts(parts)
+        if not send_message_parts(cfg, wire_parts, start_part=progress.last_part, on_part_sent=on_sent):
             return False
     return True
