@@ -25,22 +25,32 @@ jobs:
         shell: bash
         run: |
           scan_date="$(sed -n 's/^scan_date:[[:space:]]*//p' .github/manual-eod-trigger | tail -n 1 | tr -d '\r')"
+          notify="$(sed -n 's/^notify:[[:space:]]*//p' .github/manual-eod-trigger | tail -n 1 | tr -d '\r' | tr '[:upper:]' '[:lower:]')"
           if [[ ! "$scan_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
             echo "Invalid or missing scan_date in .github/manual-eod-trigger" >&2
             exit 1
           fi
+          if [[ -z "$notify" ]]; then
+            notify=false
+          fi
+          if [[ "$notify" != "true" && "$notify" != "false" ]]; then
+            echo "notify must be true or false in .github/manual-eod-trigger" >&2
+            exit 1
+          fi
           echo "scan_date=$scan_date" >> "$GITHUB_OUTPUT"
+          echo "notify=$notify" >> "$GITHUB_OUTPUT"
 
       - name: Dispatch full EOD workflow
         env:
           GH_TOKEN: ${{ github.token }}
           SCAN_DATE: ${{ steps.request.outputs.scan_date }}
+          NOTIFY: ${{ steps.request.outputs.notify }}
         run: |
           gh workflow run eod.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref main \
             -f scan_date="$SCAN_DATE" \
-            -f notify=false \
+            -f notify="$NOTIFY" \
             -f force_full_refresh=false \
             -f reuse_existing=false
-          echo "Dispatched full EOD workflow for $SCAN_DATE" >> "$GITHUB_STEP_SUMMARY"
+          echo "Dispatched full EOD workflow for $SCAN_DATE (notify=$NOTIFY)" >> "$GITHUB_STEP_SUMMARY"
