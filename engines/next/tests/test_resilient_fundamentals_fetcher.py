@@ -6,6 +6,7 @@ from src.data import fundamentals_fetcher as legacy_fundamentals
 from src.data import resilient_fundamentals_fetcher as resilient_module
 from src.data.resilient_fundamentals_fetcher import ResilientGitStorageFetcher
 from src.screening.resilient_fundamentals_batch_processor import (
+    MARKET_DATA_FINGERPRINT_SCHEMA,
     ResilientFundamentalsResumableFastOptimizedBatchProcessor,
 )
 
@@ -147,10 +148,24 @@ def test_legitimate_empty_financials_are_not_retried(tmp_path, monkeypatch):
     assert stats["providerErrorCount"] == 0
 
 
-def _set_identity(processor):
-    processor._progress_universe = {"AAA"}
+def _set_identity(processor, tickers=("AAA",)):
+    processor._progress_universe = set(tickers)
     processor.progress_identity = processor._build_progress_identity(
-        ["AAA"], min_price=5.0, max_price=10000.0, min_volume=100000
+        list(tickers), min_price=5.0, max_price=10000.0, min_volume=100000
+    )
+
+
+def _price_frame(first_close: float, last_close: float) -> pd.DataFrame:
+    index = pd.to_datetime(["2026-08-27", "2026-08-28"])
+    return pd.DataFrame(
+        {
+            "Open": [first_close - 0.2, last_close - 0.2],
+            "High": [first_close + 0.5, last_close + 0.5],
+            "Low": [first_close - 0.5, last_close - 0.5],
+            "Close": [first_close, last_close],
+            "Volume": [100_000.0, 120_000.0],
+        },
+        index=index,
     )
 
 
@@ -191,3 +206,76 @@ def test_fundamentals_counters_survive_resume_and_enter_metrics(tmp_path, monkey
     assert restored["retryCount"] == 2
     assert restored["rateLimitCount"] == 1
     assert restored["timeoutCount"] == 1
+
+
+def test_resume_invalidates_only_tickers_whose_adjusted_ohlcv_changed(tmp_path, monkeypatch):
+    monkeypatch.setenv("STOCKSCOUT_EXPECTED_SESSION", "2026-08-28")
+    monkeypatch.setenv("STOCKSCOUT_PROGRESS_SOURCE_HASH", "source-a")
+    results_dir = tmp_path / "batch_results"
+
+    processor = ResilientFundamentalsResumableFastOptimizedBatchProcessor(
+        results_dir=str(results_dir)
+    )
+    _set_identity(processor, ("AAA", "BBB"))
+    processor.price_history = {
+        "AAA": _price_frame(50.0, 51.0),
+        "BBB": _price_frame(20.0, 21.0),
+    }
+    processor.processed_tickers = {"AAA", "BBB"}
+    processor.save_progress(
+        ["AAA", "BBB"],
+        [
+            {"ticker": "AAA", "phase_info": {"phase": 2}},
+            {"ticker": "BBB", "phase_info": {"phase": 1}},
+        ],
+    )
+
+    with processor.progress_file.open("rb") as handle:
+        saved = __import__("pickle").load(handle)
+    assert saved["market_data_fingerprint_schema"] == MARKET_DATA_FINGERPRINT_SCHEMA
+    assert set(saved["market_data_fingerprints"]) == {"AAA", "BBB"}
+
+    resumed = ResilientFundamentalsResumableFastOptimizedBatchProcessor(
+        results_dir=str(results_dir)
+    )
+    _set_identity(resumed, ("AAA", "BBB"))
+    # Simulate a same-session split/provider restatement for AAA only.
+    resumed.price_history = {
+        "AAA": _price_frame(33.3, 34.0),
+        "BBB": _price_frame(20.0, 21.0),
+    }
+    progress = resumed.load_progress()
+
+    assert progress is not None
+    assert progress["processed"] == ["BBB"]
+    assert [row["ticker"] for row in progress["results"]] == ["BBB"]
+    assert resumed.resume_checkpoint_used is True
+    assert resumed.resume_checkpoint_reason == "accepted-with-market-refresh"
+    assert resumed.resume_market_invalidated_count == 1
+    assert resumed.resume_market_invalidated_examples == ["AAA"]
+
+
+def test_legacy_checkpoint_is_rejected_when_fresh_market_data_is_available(tmp_path, monkeypatch):
+    monkeypatch.setenv("STOCKSCOUT_EXPECTED_SESSION", "2026-08-28")
+    monkeypatch.setenv("STOCKSCOUT_PROGRESS_SOURCE_HASH", "source-a")
+    results_dir = tmp_path / "batch_results"
+
+    processor = ResilientFundamentalsResumableFastOptimizedBatchProcessor(
+        results_dir=str(results_dir)
+    )
+    _set_identity(processor)
+    processor.processed_tickers = {"AAA"}
+    # No price_history here deliberately writes the historical checkpoint shape.
+    processor.save_progress(
+        ["AAA"], [{"ticker": "AAA", "phase_info": {"phase": 2}}]
+    )
+
+    resumed = ResilientFundamentalsResumableFastOptimizedBatchProcessor(
+        results_dir=str(results_dir)
+    )
+    _set_identity(resumed)
+    resumed.price_history = {"AAA": _price_frame(50.0, 51.0)}
+
+    assert resumed.load_progress() is None
+    assert resumed.resume_checkpoint_used is False
+    assert resumed.resume_checkpoint_reason == "market-fingerprint-missing"
