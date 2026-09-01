@@ -1,4 +1,12 @@
-"""Build the two read-only Next context assets with verified last-good fallback."""
+"""Build read-only Next contexts and finalize local Next handoff metadata.
+
+The daily EOD scanner writes its canonical Next snapshot and charts before this
+step.  When that local snapshot is present, this module also runs the existing
+frontend projection builder so ``manifest.json`` is guaranteed to exist and to
+match the validated session before the workflow stages its handoff.  Reuse-only
+publishing checks out Next under ``.sources`` and therefore skips this local
+materialization path.
+"""
 from __future__ import annotations
 
 import argparse
@@ -14,6 +22,7 @@ from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
 NEXT_ENGINE = ROOT / "engines" / "next"
+LOCAL_NEXT_DATA = NEXT_ENGINE / "frontend" / "public" / "data"
 DEFAULT_FACTOR_FALLBACK = (
     "https://garrincha077.github.io/StockScreener-next/data/factors/factor-regime.json"
 )
@@ -109,6 +118,57 @@ def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+def ensure_local_next_handoff_manifest() -> bool:
+    """Build and verify the daily scanner's local Next manifest when applicable.
+
+    ``prepare_frontend_payloads.py`` is the authoritative manifest builder but the
+    daily workflow previously never invoked it before trying to copy
+    ``manifest.json`` into the Next handoff.  Keeping the repair here preserves
+    the pinned vendored Next files while making the already-invoked pre-handoff
+    boundary fail closed.
+    """
+    latest = LOCAL_NEXT_DATA / "latest.json"
+    if not latest.exists():
+        # Reuse-only workflows keep their canonical Next snapshot in .sources.
+        return False
+
+    result = _run([sys.executable, str(NEXT_ENGINE / "prepare_frontend_payloads.py")])
+    if result.returncode != 0:
+        raise RuntimeError(
+            "Next frontend handoff projection failed: "
+            f"{(result.stderr or result.stdout)[-1000:]}"
+        )
+
+    manifest_path = LOCAL_NEXT_DATA / "manifest.json"
+    if not manifest_path.exists():
+        raise RuntimeError("Next frontend projection completed without manifest.json")
+
+    canonical = _load(latest)
+    manifest = _load(manifest_path)
+    expected_session = str((canonical.get("market") or {}).get("scanDate") or "").strip()
+    session = manifest.get("marketSession") or {}
+    if expected_session and session != {
+        "date": expected_session,
+        "status": "closed",
+        "timezone": "America/New_York",
+    }:
+        raise RuntimeError(
+            f"Next handoff manifest session mismatch: expected={expected_session!r} actual={session!r}"
+        )
+
+    chart_asset = ((manifest.get("assets") or {}).get("charts") or {})
+    try:
+        chart_coverage = float(chart_asset.get("coveragePct") or 0.0)
+    except (TypeError, ValueError):
+        chart_coverage = 0.0
+    if chart_coverage < 95.0:
+        raise RuntimeError(
+            f"Next handoff manifest chart coverage too low: {chart_coverage:.2f}%"
+        )
+
+    return True
+
+
 def build_contexts(
     output_dir: Path,
     *,
@@ -116,6 +176,10 @@ def build_contexts(
     factor_fallback_url: str = DEFAULT_FACTOR_FALLBACK,
     gmli_fallback_url: str = DEFAULT_GMLI_FALLBACK,
 ) -> dict[str, Any]:
+    # This runs after the canonical/chart validators in the daily workflow.  It
+    # makes handoff materialization explicit and atomic before any artifact copy.
+    handoff_manifest_built = ensure_local_next_handoff_manifest()
+
     output_dir.mkdir(parents=True, exist_ok=True)
     factor_path = output_dir / "factor-regime.json"
     gmli_path = output_dir / "gmli-context.json"
@@ -177,6 +241,7 @@ def build_contexts(
     _write(gmli_path, gmli)
 
     result = {
+        "handoffManifestBuilt": handoff_manifest_built,
         "factorRegime": {"path": str(factor_path), "freshness": factor["freshness"]},
         "gmliContext": {"path": str(gmli_path), "freshness": gmli["freshness"]},
     }
