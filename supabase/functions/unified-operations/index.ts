@@ -6,7 +6,10 @@ const EXPECTED_ISSUER = "https://token.actions.githubusercontent.com";
 const EXPECTED_AUDIENCE = "stockscout-unified-operations";
 const EXPECTED_REPOSITORY = "Garrincha077/StockScout-Unified";
 const EXPECTED_REF = "refs/heads/main";
-const EXPECTED_WORKFLOW = `${EXPECTED_REPOSITORY}/.github/workflows/eod.yml@${EXPECTED_REF}`;
+const EXPECTED_WORKFLOWS = new Set([
+  `${EXPECTED_REPOSITORY}/.github/workflows/eod.yml@${EXPECTED_REF}`,
+  `${EXPECTED_REPOSITORY}/.github/workflows/notification-retry.yml@${EXPECTED_REF}`,
+]);
 const UNIFIED_PAGES_BASE_URL = "https://garrincha077.github.io/StockScout-Unified";
 const MODE_IDS = ["bottom-fishing", "next", "ryan-original"] as const;
 
@@ -78,7 +81,7 @@ async function verifyGithubOidc(request: Request): Promise<Claims> {
   const key = await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
   const valid = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, bytes(parts[2]), new TextEncoder().encode(`${parts[0]}.${parts[1]}`));
   if (!valid) throw new Error("invalid GitHub OIDC signature");
-  if (claims.repository !== EXPECTED_REPOSITORY || claims.ref !== EXPECTED_REF || claims.workflow_ref !== EXPECTED_WORKFLOW || claims.environment !== "production" || String(claims.ref_protected) !== "true") throw new Error("GitHub OIDC workflow claims are outside the production allowlist");
+  if (claims.repository !== EXPECTED_REPOSITORY || claims.ref !== EXPECTED_REF || !EXPECTED_WORKFLOWS.has(String(claims.workflow_ref)) || claims.environment !== "production" || String(claims.ref_protected) !== "true") throw new Error("GitHub OIDC workflow claims are outside the production allowlist");
   return claims;
 }
 
