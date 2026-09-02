@@ -20,7 +20,10 @@ def test_notification_retry_is_notification_only_and_fail_closed() -> None:
 
     assert 'stockscout_unified.cli verify --public-dir .pages' in workflow
     assert 'verify_remote_activation.py --run-id "$RUN_ID"' in workflow
-    assert 'stockscout_unified.cli evaluate-alerts' in workflow
+    assert 'pattern: unified-alerts-${{ steps.request.outputs.source_run_id }}-*' in workflow
+    assert "alerts.get('runId') != run_id" in workflow
+    assert 'stockscout_unified.cli evaluate-alerts' not in workflow
+    assert '--alerts .notify/alerts.json' in workflow
     assert '--allow-notify' in workflow
     assert 'Scan invoked: **false**' in workflow
     assert 'Pages deployment invoked: **false**' in workflow

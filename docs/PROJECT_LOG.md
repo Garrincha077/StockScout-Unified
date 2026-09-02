@@ -1,5 +1,13 @@
 # StockScout Unified project log
 
+## 2026-09-02 — Immutable owner-alert retry snapshot
+
+- Persist the exact `.notify/alerts.json` produced by the source EOD run before Telegram delivery as a private 14-day artifact.
+- Notification-only retry downloads that source-run snapshot, verifies its `runId` against the exact healthy deployed Pages run, and fails closed on missing or mismatched input.
+- Retry no longer re-evaluates stateful owner alerts; it only resumes Telegram delivery from the original evaluated events.
+- No scanner, ranking, scoring, signal methodology, market-data semantics, Pages activation, or alert-evaluation logic changed.
+- Regression contracts require exact snapshot reuse and prohibit retry-time `evaluate-alerts`.
+
 ## 2026-08-25 — Isolated clean-history bootstrap
 
 - Created a new repository instead of modifying any existing StockScout or
