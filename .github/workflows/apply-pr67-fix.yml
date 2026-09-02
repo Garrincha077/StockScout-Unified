@@ -1,0 +1,180 @@
+name: Apply PR67 narrow alert retry fix
+
+on:
+  push:
+    branches:
+      - fix/persist-alert-evaluation-for-retry
+    paths:
+      - .github/workflows/apply-pr67-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/persist-alert-evaluation-for-retry
+
+      - name: Apply the reviewed narrow fix
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit(f"Expected patch anchor missing in {path}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          eod_old = '''      - name: Evaluate owner alerts for the exact deployed run
+        if: ${{ (github.event_name == 'schedule' || inputs.notify) && vars.UNIFIED_DELIVERY_ENDPOINT != '' }}
+        run: python -m stockscout_unified.cli evaluate-alerts --public-dir .pages --endpoint "${{ vars.UNIFIED_DELIVERY_ENDPOINT }}" --output .notify/alerts.json
+      - name: Deliver five resumable Telegram series
+'''
+          eod_new = '''      - name: Evaluate owner alerts for the exact deployed run
+        if: ${{ (github.event_name == 'schedule' || inputs.notify) && vars.UNIFIED_DELIVERY_ENDPOINT != '' }}
+        run: python -m stockscout_unified.cli evaluate-alerts --public-dir .pages --endpoint "${{ vars.UNIFIED_DELIVERY_ENDPOINT }}" --output .notify/alerts.json
+      - name: Preserve exact owner alert evaluation for notification retry
+        if: ${{ (github.event_name == 'schedule' || inputs.notify) && vars.UNIFIED_DELIVERY_ENDPOINT != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unified-alerts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .notify/alerts.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+      - name: Deliver five resumable Telegram series
+'''
+          replace_once('.github/workflows/eod.yml', eod_old, eod_new)
+
+          retry_download_old = '''      - name: Download the private Bottom digest input from the same EOD run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: unified-notify-${{ steps.request.outputs.source_run_id }}-*
+          path: .notify-handoff
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.request.outputs.source_run_id }}
+
+      - name: Extract and bind notification inputs to the exact deployed run
+'''
+          retry_download_new = '''      - name: Download the private Bottom digest input from the same EOD run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: unified-notify-${{ steps.request.outputs.source_run_id }}-*
+          path: .notify-handoff
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.request.outputs.source_run_id }}
+
+      - name: Download the exact owner alert evaluation from the same EOD run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: unified-alerts-${{ steps.request.outputs.source_run_id }}-*
+          path: .alerts-handoff
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.request.outputs.source_run_id }}
+
+      - name: Extract and bind notification inputs to the exact deployed run
+'''
+          replace_once('.github/workflows/notification-retry.yml', retry_download_old, retry_download_new)
+
+          retry_extract_old = '''          notify_file="$(find .notify-handoff -maxdepth 2 -type f -name bottom.json | sort -V | tail -n 1)"
+          if [ -z "$notify_file" ]; then
+            echo "::error::No private Bottom digest input exists for source run $SOURCE_RUN_ID"
+            exit 1
+          fi
+          mkdir -p .notify
+          cp "$notify_file" .notify/bottom.json
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+          from pathlib import Path
+
+          manifest = json.loads(Path('.pages/data/manifest.json').read_text(encoding='utf-8'))
+          bottom = json.loads(Path('.notify/bottom.json').read_text(encoding='utf-8'))
+          expected_session = os.environ['SESSION_DATE']
+'''
+          retry_extract_new = '''          notify_file="$(find .notify-handoff -maxdepth 2 -type f -name bottom.json | sort -V | tail -n 1)"
+          alerts_file="$(find .alerts-handoff -maxdepth 2 -type f -name alerts.json | sort -V | tail -n 1)"
+          if [ -z "$notify_file" ]; then
+            echo "::error::No private Bottom digest input exists for source run $SOURCE_RUN_ID"
+            exit 1
+          fi
+          if [ -z "$alerts_file" ]; then
+            echo "::error::No persisted owner alert evaluation exists for source run $SOURCE_RUN_ID"
+            exit 1
+          fi
+          mkdir -p .notify
+          cp "$notify_file" .notify/bottom.json
+          cp "$alerts_file" .notify/alerts.json
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+          from pathlib import Path
+
+          manifest = json.loads(Path('.pages/data/manifest.json').read_text(encoding='utf-8'))
+          bottom = json.loads(Path('.notify/bottom.json').read_text(encoding='utf-8'))
+          alerts = json.loads(Path('.notify/alerts.json').read_text(encoding='utf-8'))
+          expected_session = os.environ['SESSION_DATE']
+'''
+          replace_once('.github/workflows/notification-retry.yml', retry_extract_old, retry_extract_new)
+
+          retry_validate_old = '''          if bottom.get('runId') != run_id or bottom.get('sessionDate') != expected_session:
+              raise SystemExit('Private Bottom digest input does not match the downloaded Pages run')
+          print(f'run_id={run_id}')
+'''
+          retry_validate_new = '''          if bottom.get('runId') != run_id or bottom.get('sessionDate') != expected_session:
+              raise SystemExit('Private Bottom digest input does not match the downloaded Pages run')
+          if alerts.get('runId') != run_id or not isinstance(alerts.get('events'), list):
+              raise SystemExit('Persisted owner alert evaluation does not match the downloaded Pages run')
+          print(f'run_id={run_id}')
+'''
+          replace_once('.github/workflows/notification-retry.yml', retry_validate_old, retry_validate_new)
+
+          retry_eval_old = '''      - name: Evaluate owner alerts against the exact live run
+        run: python -m stockscout_unified.cli evaluate-alerts --public-dir .pages --endpoint "${{ vars.UNIFIED_DELIVERY_ENDPOINT }}" --output .notify/alerts.json
+
+'''
+          replace_once('.github/workflows/notification-retry.yml', retry_eval_old, '')
+
+          test_old = '''    assert 'stockscout_unified.cli verify --public-dir .pages' in workflow
+    assert 'verify_remote_activation.py --run-id "$RUN_ID"' in workflow
+    assert 'stockscout_unified.cli evaluate-alerts' in workflow
+    assert '--allow-notify' in workflow
+'''
+          test_new = '''    assert 'stockscout_unified.cli verify --public-dir .pages' in workflow
+    assert 'verify_remote_activation.py --run-id "$RUN_ID"' in workflow
+    assert 'pattern: unified-alerts-${{ steps.request.outputs.source_run_id }}-*' in workflow
+    assert "alerts.get('runId') != run_id" in workflow
+    assert 'stockscout_unified.cli evaluate-alerts' not in workflow
+    assert '--alerts .notify/alerts.json' in workflow
+    assert '--allow-notify' in workflow
+'''
+          replace_once('tests/test_notification_retry_workflow.py', test_old, test_new)
+
+          log = Path('docs/PROJECT_LOG.md')
+          log_text = log.read_text(encoding='utf-8')
+          marker = '## 2026-09-02 — Immutable owner-alert retry snapshot'
+          if marker not in log_text:
+              section = '''\n## 2026-09-02 — Immutable owner-alert retry snapshot\n\n- Persist the exact `.notify/alerts.json` produced by the source EOD run before Telegram delivery as a private 14-day artifact.\n- Notification-only retry downloads that source-run snapshot, verifies its `runId` against the exact healthy deployed Pages run, and fails closed on missing or mismatched input.\n- Retry no longer re-evaluates stateful owner alerts; it only resumes Telegram delivery from the original evaluated events.\n- No scanner, ranking, scoring, signal methodology, market-data semantics, Pages activation, or alert-evaluation logic changed.\n- Regression contracts require exact snapshot reuse and prohibit retry-time `evaluate-alerts`.\n\n'''
+              log.write_text(log_text.replace('# StockScout Unified project log\n', '# StockScout Unified project log\n' + section, 1), encoding='utf-8')
+          PY
+
+          git rm .github/workflows/apply-pr67-fix.yml
+          git diff --check
+
+      - name: Commit the narrow fix to PR 67
+        shell: bash
+        run: |
+          git config user.name "StockScout Review Supervisor"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Persist alert snapshots for notification retries"
+          git push origin HEAD:fix/persist-alert-evaluation-for-retry
