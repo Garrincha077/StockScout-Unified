@@ -209,17 +209,24 @@ def evaluate_owner_alerts(
     return result
 
 
-def _wire_safe_parts(parts: list[str]) -> list[str]:
-    """Escape stray MarkdownV2 pipes without changing the durable content identity.
+_MARKDOWN_V2_RESERVED = r"_*[]()~`>#+-=|{}. !".replace(" ", "")
+_MARKDOWN_V2_UNESCAPED = re.compile(r"(?<!\\)([" + re.escape(_MARKDOWN_V2_RESERVED) + r"])")
 
-    Historic Bottom renderers contain a few literal ``|`` separators while the
-    rest of the message is already valid MarkdownV2.  Escaping only an
-    unescaped pipe at the final wire boundary fixes Telegram parsing while the
-    delivery ledger continues to hash the canonical pre-wire parts.  A retry
-    can therefore resume after already delivered parts instead of duplicating
-    them.
+
+def _wire_safe_parts(parts: list[str], *, strict: bool = False) -> list[str]:
+    """Make final Telegram wire text parse-safe without changing durable identity.
+
+    The newer isolated renderers escape their own MarkdownV2 content, so their
+    final boundary only needs the historic literal pipe repair.  The legacy
+    Bottom digest is older and has accumulated raw MarkdownV2-reserved
+    characters in prose (for example ``|`` and ``+``).  For that one series we
+    escape every still-unescaped reserved character at the wire boundary.
+    This intentionally trades rich formatting in the legacy digest for
+    guaranteed delivery, while the ledger continues hashing canonical pre-wire
+    parts so retries remain resumable and do not duplicate already sent parts.
     """
-    return [re.sub(r"(?<!\\)\|", r"\\|", part) for part in parts]
+    pattern = _MARKDOWN_V2_UNESCAPED if strict else re.compile(r"(?<!\\)\|")
+    return [pattern.sub(lambda match: "\\" + match.group(0), part) for part in parts]
 
 
 def deliver_series(series: dict[str, list[str]], *, endpoint: str) -> bool:
@@ -233,7 +240,7 @@ def deliver_series(series: dict[str, list[str]], *, endpoint: str) -> bool:
         def on_sent(sent: int, total: int, *, series_name: str = name, digest: str = content_hash) -> None:
             ledger.mark(series_name, digest, total, sent)
 
-        wire_parts = _wire_safe_parts(parts)
+        wire_parts = _wire_safe_parts(parts, strict=name == "bottom-fishing")
         if not send_message_parts(cfg, wire_parts, start_part=progress.last_part, on_part_sent=on_sent):
             return False
     return True
