@@ -21,6 +21,7 @@ def test_notification_retry_reuses_exact_persisted_alert_snapshot() -> None:
     workflow = Path('.github/workflows/notification-retry.yml').read_text(encoding='utf-8')
 
     assert 'pattern: unified-alerts-${{ steps.request.outputs.source_run_id }}-*' in workflow
+    assert 'alerts_file="$(find .alerts-handoff -maxdepth 2 -type f -name alerts.json | sort -V | head -n 1)"' in workflow
     assert 'alerts.json' in workflow
     assert "alerts.get('runId') != run_id" in workflow
     assert 'stockscout_unified.cli evaluate-alerts' not in workflow
