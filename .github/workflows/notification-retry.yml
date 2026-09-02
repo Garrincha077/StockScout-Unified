@@ -115,7 +115,7 @@ jobs:
           test -f .pages/artifact.tar
           tar -xf .pages/artifact.tar -C .pages
           notify_file="$(find .notify-handoff -maxdepth 2 -type f -name bottom.json | sort -V | tail -n 1)"
-          alerts_file="$(find .alerts-handoff -maxdepth 2 -type f -name alerts.json | sort -V | tail -n 1)"
+          alerts_file="$(find .alerts-handoff -maxdepth 2 -type f -name alerts.json | sort -V | head -n 1)"
           if [ -z "$notify_file" ]; then
             echo "::error::No private Bottom digest input exists for source run $SOURCE_RUN_ID"
             exit 1
