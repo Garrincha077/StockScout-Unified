@@ -96,6 +96,15 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ steps.request.outputs.source_run_id }}
 
+      - name: Download the exact owner alert evaluation from the same EOD run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: unified-alerts-${{ steps.request.outputs.source_run_id }}-*
+          path: .alerts-handoff
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.request.outputs.source_run_id }}
+
       - name: Extract and bind notification inputs to the exact deployed run
         id: identity
         shell: bash
@@ -106,12 +115,18 @@ jobs:
           test -f .pages/artifact.tar
           tar -xf .pages/artifact.tar -C .pages
           notify_file="$(find .notify-handoff -maxdepth 2 -type f -name bottom.json | sort -V | tail -n 1)"
+          alerts_file="$(find .alerts-handoff -maxdepth 2 -type f -name alerts.json | sort -V | tail -n 1)"
           if [ -z "$notify_file" ]; then
             echo "::error::No private Bottom digest input exists for source run $SOURCE_RUN_ID"
             exit 1
           fi
+          if [ -z "$alerts_file" ]; then
+            echo "::error::No persisted owner alert evaluation exists for source run $SOURCE_RUN_ID"
+            exit 1
+          fi
           mkdir -p .notify
           cp "$notify_file" .notify/bottom.json
+          cp "$alerts_file" .notify/alerts.json
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
           import os
@@ -119,6 +134,7 @@ jobs:
 
           manifest = json.loads(Path('.pages/data/manifest.json').read_text(encoding='utf-8'))
           bottom = json.loads(Path('.notify/bottom.json').read_text(encoding='utf-8'))
+          alerts = json.loads(Path('.notify/alerts.json').read_text(encoding='utf-8'))
           expected_session = os.environ['SESSION_DATE']
           source_run_id = os.environ['SOURCE_RUN_ID']
           run_id = str(manifest.get('runId') or '').strip()
@@ -130,6 +146,8 @@ jobs:
               raise SystemExit(f'Pages run {run_id} is not owned by source workflow run {source_run_id}')
           if bottom.get('runId') != run_id or bottom.get('sessionDate') != expected_session:
               raise SystemExit('Private Bottom digest input does not match the downloaded Pages run')
+          if alerts.get('runId') != run_id or not isinstance(alerts.get('events'), list):
+              raise SystemExit('Persisted owner alert evaluation does not match the downloaded Pages run')
           print(f'run_id={run_id}')
           PY
 
@@ -140,9 +158,6 @@ jobs:
         env:
           RUN_ID: ${{ steps.identity.outputs.run_id }}
         run: python scripts/verify_remote_activation.py --run-id "$RUN_ID"
-
-      - name: Evaluate owner alerts against the exact live run
-        run: python -m stockscout_unified.cli evaluate-alerts --public-dir .pages --endpoint "${{ vars.UNIFIED_DELIVERY_ENDPOINT }}" --output .notify/alerts.json
 
       - name: Resume and deliver Telegram series only
         env:
