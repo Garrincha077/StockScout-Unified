@@ -60,4 +60,4 @@ jobs:
           fi
           python -m stockscout_unified.gridview_notification \
             --delivery-endpoint "$UNIFIED_DELIVERY_ENDPOINT" \
-            --min-session-date "2026-09-18"
+            --min-session-date "2026-09-17"
