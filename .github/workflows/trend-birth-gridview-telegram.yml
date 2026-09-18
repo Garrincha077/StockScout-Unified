@@ -1,0 +1,63 @@
+name: Trend Birth GridView Telegram
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/stockscout_unified/gridview_notification.py"
+      - "tests/test_gridview_notification.py"
+      - ".github/workflows/trend-birth-gridview-telegram.yml"
+  schedule:
+    # Runs ten minutes after the isolated LAB refresh probes.
+    - cron: "27 3 * * 2-6"
+      timezone: "Europe/Zagreb"
+    - cron: "27 7 * * 2-6"
+      timezone: "Europe/Zagreb"
+    - cron: "27 11 * * 2-6"
+      timezone: "Europe/Zagreb"
+    - cron: "27 17 * * 2-6"
+      timezone: "Europe/Zagreb"
+
+concurrency:
+  group: trend-birth-gridview-telegram
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install notification runtime
+        run: |
+          python -m pip install -r requirements.lock
+          python -m pip install -e .
+
+      - name: Test GridView notification contract
+        run: python -m unittest tests/test_gridview_notification.py -v
+
+      - name: Deliver GridView summary once per session
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          UNIFIED_DELIVERY_ENDPOINT: ${{ vars.UNIFIED_DELIVERY_ENDPOINT }}
+        run: |
+          if [ -z "$UNIFIED_DELIVERY_ENDPOINT" ]; then
+            echo "::error::UNIFIED_DELIVERY_ENDPOINT is not configured"
+            exit 1
+          fi
+          python -m stockscout_unified.gridview_notification \
+            --delivery-endpoint "$UNIFIED_DELIVERY_ENDPOINT" \
+            --min-session-date "2026-09-18"
