@@ -54,11 +54,11 @@ jobs:
         run: |
           python -m stockscout_unified.gridview_notification \
             --marker-path ".state/trend-birth-gridview-last-sent.txt" \
-            --min-session-date "2026-09-17"
+            --min-session-date "2026-09-18"
 
       - name: Persist delivery marker after successful send
         run: |
-          if git diff --quiet -- .state/trend-birth-gridview-last-sent.txt; then
+          if [ -z "$(git status --porcelain -- .state/trend-birth-gridview-last-sent.txt)" ]; then
             echo "Delivery marker unchanged."
             exit 0
           fi
