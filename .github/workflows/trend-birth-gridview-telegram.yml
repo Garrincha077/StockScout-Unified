@@ -24,8 +24,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
-  id-token: write
+  contents: write
 
 jobs:
   send:
@@ -52,12 +51,19 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          UNIFIED_DELIVERY_ENDPOINT: ${{ vars.UNIFIED_DELIVERY_ENDPOINT }}
         run: |
-          if [ -z "$UNIFIED_DELIVERY_ENDPOINT" ]; then
-            echo "::error::UNIFIED_DELIVERY_ENDPOINT is not configured"
-            exit 1
-          fi
           python -m stockscout_unified.gridview_notification \
-            --delivery-endpoint "$UNIFIED_DELIVERY_ENDPOINT" \
+            --marker-path ".state/trend-birth-gridview-last-sent.txt" \
             --min-session-date "2026-09-17"
+
+      - name: Persist delivery marker after successful send
+        run: |
+          if git diff --quiet -- .state/trend-birth-gridview-last-sent.txt; then
+            echo "Delivery marker unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .state/trend-birth-gridview-last-sent.txt
+          git commit -m "chore: mark GridView Telegram delivery"
+          git push origin HEAD:main
