@@ -1,132 +1,252 @@
-"""Send the isolated Trend Birth GridView daily summary through Unified Telegram infrastructure."""
+"""Verify deployed snapshots and reserve Telegram delivery before network I/O.
+
+The workflow must push the reservation before --send-reserved. Ambiguous delivery
+is never retried automatically; Telegram has no idempotency key for sendMessage.
+"""
+
 from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
+import json
+import os
+import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 import requests
 
-from stock_scout.notifications.telegram import _escape_md_v2, send_message_parts
+from stock_scout.notifications.telegram import _escape_md_v2, sends_suppressed
 from stockscout_unified.notifications import _telegram_config
 
-DEFAULT_SNAPSHOT_URL = (
-    "https://raw.githubusercontent.com/Garrincha077/StockScout-Trend-Birth/"
-    "feature/unified-review-grid-lab/lab/data/latest.json"
-)
 DEFAULT_GRID_URL = "https://stockscout-trend-birth-review-lab.vercel.app"
 DEFAULT_MARKER = ".state/trend-birth-gridview-last-sent.txt"
+DEFAULT_LEDGER = ".state/trend-birth-gridview-deliveries.json"
+DEFAULT_PUBLICATION_URL = (
+    "https://raw.githubusercontent.com/Garrincha077/StockScout-Trend-Birth/"
+    "feature/unified-review-grid-lab/lab/data/publication.json"
+)
+DEFAULT_UNIFIED_URL = "https://garrincha077.github.io/StockScout-Unified/data/manifest.json"
+ID_PATTERN = r"[A-Za-z0-9][A-Za-z0-9_-]{0,119}--[a-f0-9]{64}"
 
 
 def snapshot_summary(payload: dict[str, Any]) -> dict[str, Any]:
-    source = payload.get("source") if isinstance(payload.get("source"), dict) else {}
-    session_date = str(source.get("sessionDate") or "").strip()
-    dt.date.fromisoformat(session_date)
-
-    candidates = payload.get("candidates") if isinstance(payload.get("candidates"), list) else []
-    candidate_count = int(payload.get("candidateCount") or len(candidates))
-    kell = payload.get("kell") if isinstance(payload.get("kell"), dict) else {}
-    gap = payload.get("kellGap") if isinstance(payload.get("kellGap"), dict) else {}
-    multi_hit = sum(
-        1
-        for item in candidates
-        if isinstance(item, dict) and len(set(item.get("sources") or [])) > 1
-    )
+    session = payload["source"]["sessionDate"]
+    dt.date.fromisoformat(session)
+    candidates = payload["candidates"]
+    if payload["candidateCount"] != len(candidates):
+        raise ValueError("Candidate count mismatch")
     return {
-        "sessionDate": session_date,
-        "candidateCount": candidate_count,
-        "kell3x": int(kell.get("qualifiedCount") or 0),
-        "gapUp": int(gap.get("qualifiedCount") or 0),
-        "multiHit": multi_hit,
+        "sessionDate": session,
+        "candidateCount": len(candidates),
+        "kell3x": int((payload.get("kell") or {}).get("qualifiedCount") or 0),
+        "gapUp": int((payload.get("kellGap") or {}).get("qualifiedCount") or 0),
+        "multiHit": sum(len(set(item.get("sources") or [])) > 1 for item in candidates),
     }
 
 
-def render_message(summary: dict[str, Any], *, grid_url: str = DEFAULT_GRID_URL) -> str:
+def render_message(summary: dict[str, Any], *, grid_url: str) -> str:
     return "\n".join(
         [
             f"📊 *Trend Birth GridView*  `{_escape_md_v2(summary['sessionDate'])}`",
             f"Kandidati: *{int(summary['candidateCount'])}*",
             (
                 f"Kell 3x RVOL: *{int(summary['kell3x'])}* \\| "
-                f"Gap Up: *{int(summary['gapUp'])}* \\| "
-                f"Multi hit: *{int(summary['multiHit'])}*"
+                f"Gap Up: *{int(summary['gapUp'])}* \\| Multi hit: *{int(summary['multiHit'])}*"
             ),
             f"[Open GridView]({_escape_md_v2(grid_url)})",
         ]
     )
 
 
-def fetch_snapshot(url: str) -> dict[str, Any]:
-    response = requests.get(url, timeout=30)
+def fetch_bytes(url: str) -> bytes:
+    response = requests.get(url, timeout=45, headers={"Cache-Control": "no-cache"})
     response.raise_for_status()
-    payload = response.json()
-    if not isinstance(payload, dict):
-        raise ValueError("GridView snapshot must be a JSON object")
-    return payload
+    return response.content
 
 
-def marker_date(path: str | Path) -> str:
-    marker = Path(path)
-    if not marker.exists():
-        return ""
-    value = marker.read_text(encoding="utf-8").strip()
-    if value:
-        dt.date.fromisoformat(value)
-    return value
+def verify_publication(
+    grid_url: str = DEFAULT_GRID_URL,
+    expected_url: str = DEFAULT_PUBLICATION_URL,
+    unified_url: str = DEFAULT_UNIFIED_URL,
+) -> tuple[dict, dict]:
+    """Verify the deployed pointer, archive, and snapshot-aware frontend."""
+    base = grid_url.rstrip("/")
+    manifest = json.loads(fetch_bytes(base + "/data/publication.json"))
+    if manifest.get("schemaVersion") != "trend-birth-publication-v1":
+        raise ValueError("Publication v1 is not deployed")
+    if json.loads(fetch_bytes(expected_url)) != manifest:
+        raise ValueError("The latest committed publication has not deployed yet")
+    snapshot_id = manifest["snapshotId"]
+    if not re.fullmatch(ID_PATTERN, snapshot_id):
+        raise ValueError("Invalid snapshot ID")
+    if manifest["snapshotPath"] != f"data/snapshots/{snapshot_id}.json":
+        raise ValueError("Invalid archive path")
+    content = fetch_bytes(base + "/" + manifest["snapshotPath"])
+    digest = hashlib.sha256(content).hexdigest()
+    if digest != manifest["sha256"] or snapshot_id != f"{manifest['runId']}--{digest}":
+        raise ValueError("Deployed archive hash mismatch")
+    snapshot = json.loads(content)
+    for field in ("runId", "sessionDate"):
+        if snapshot["source"][field] != manifest[field]:
+            raise ValueError("Deployed archive identity mismatch")
+    summary = snapshot_summary(snapshot)
+    candidates = snapshot["candidates"]
+    if len({item["ticker"] for item in candidates}) != len(candidates):
+        raise ValueError("Duplicate ticker")
+    charts = sum(bool(item.get("chartBars")) for item in candidates)
+    if (
+        charts != len(candidates)
+        or snapshot["chartCount"] != charts
+        or manifest["chartCount"] != charts
+    ):
+        raise ValueError("Incomplete chart coverage")
+    if summary["candidateCount"] != manifest["candidateCount"]:
+        raise ValueError("Publication count mismatch")
+    if "snapshot-loader.js" not in fetch_bytes(base + "/").decode("utf-8"):
+        raise ValueError("Snapshot-aware GridView is not deployed")
+    loader = fetch_bytes(base + "/snapshot-loader.js").decode("utf-8")
+    if "ReviewSnapshots" not in loader or "data/snapshots/" not in loader:
+        raise ValueError("Snapshot loader is not deployed")
+    if json.loads(fetch_bytes(base + "/data/publication.json")) != manifest:
+        raise ValueError("Publication changed during verification")
+    active = json.loads(fetch_bytes(unified_url))
+    if active.get("status") != "healthy" or any(
+        active.get(field) != manifest[field] for field in ("runId", "sessionDate")
+    ):
+        raise ValueError("Review is behind the active Unified scan")
+    return manifest, summary
 
 
-def deliver_once_per_session(
-    payload: dict[str, Any],
+def read_ledger(path: Path) -> dict:
+    if not path.exists():
+        return {"schemaVersion": 1, "sessions": {}}
+    ledger = json.loads(path.read_text(encoding="utf-8"))
+    if ledger.get("schemaVersion") != 1 or not isinstance(ledger.get("sessions"), dict):
+        raise ValueError("Invalid delivery ledger")
+    return ledger
+
+
+def write_ledger(path: Path, ledger: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(ledger, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
+def reserve(
+    manifest: dict,
+    summary: dict,
     *,
-    marker_path: str | Path = DEFAULT_MARKER,
-    min_session_date: str | None = None,
+    ledger_path: Path,
+    marker_path: Path,
+    reservation_id: str,
     grid_url: str = DEFAULT_GRID_URL,
 ) -> bool:
-    summary = snapshot_summary(payload)
-    session_date = summary["sessionDate"]
-
-    if min_session_date and dt.date.fromisoformat(session_date) < dt.date.fromisoformat(min_session_date):
-        print(f"GridView session {session_date} is below bootstrap floor {min_session_date}; skipping.")
-        return True
-
-    last_sent = marker_date(marker_path)
-    if last_sent and dt.date.fromisoformat(session_date) <= dt.date.fromisoformat(last_sent):
-        print(f"GridView Telegram summary already delivered through {last_sent}; skipping {session_date}.")
-        return True
-
-    cfg = _telegram_config()
-    message = render_message(summary, grid_url=grid_url)
-    ok = send_message_parts(cfg, [message])
-    if not ok:
+    session = manifest["sessionDate"]
+    if not reservation_id:
+        raise ValueError("A unique reservation ID is required")
+    ledger = read_ledger(ledger_path)
+    prior = ledger["sessions"].get(session)
+    if prior:
+        if prior["status"] != "sent":
+            raise ValueError(
+                f"Session {session} has unresolved delivery; reconcile before retrying"
+            )
         return False
-
-    marker = Path(marker_path)
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text(session_date + "\n", encoding="utf-8")
-    print(
-        "GridView Telegram summary delivered: "
-        f"{session_date} candidates={summary['candidateCount']} "
-        f"kell3x={summary['kell3x']} gap={summary['gapUp']} multi={summary['multiHit']}"
-    )
+    if marker_path.exists():
+        legacy = marker_path.read_text(encoding="utf-8").strip()
+        if legacy and dt.date.fromisoformat(session) <= dt.date.fromisoformat(legacy):
+            return False
+    if ledger["sessions"] and session < max(ledger["sessions"]):
+        raise ValueError("Refusing notification rollback")
+    link = grid_url.rstrip("/") + "/?" + urlencode({"snapshot": manifest["snapshotId"]})
+    ledger["sessions"][session] = {
+        "status": "reserved",
+        "reservationId": reservation_id,
+        "snapshotId": manifest["snapshotId"],
+        "runId": manifest["runId"],
+        "gridUrl": link,
+        "message": render_message(summary, grid_url=link),
+    }
+    write_ledger(ledger_path, ledger)
     return True
+
+
+def send_reserved(ledger_path: Path, reservation_id: str) -> bool:
+    if sends_suppressed():
+        raise ValueError("Notifications are disabled; reservation was not sent")
+    cfg = _telegram_config()
+    ledger = read_ledger(ledger_path)
+    records = [
+        record
+        for record in ledger["sessions"].values()
+        if record["reservationId"] == reservation_id
+    ]
+    if len(records) != 1 or records[0]["status"] != "reserved":
+        raise ValueError("No unique unsent reservation for this attempt")
+    record = records[0]
+    record["status"] = "uncertain"
+    write_ledger(ledger_path, ledger)
+    try:
+        # Exactly one request; the generic Telegram helper retries ambiguous I/O.
+        response = requests.post(
+            f"https://api.telegram.org/bot{cfg.bot_token}/sendMessage",
+            data={
+                "chat_id": cfg.chat_id,
+                "text": record["message"],
+                "parse_mode": "MarkdownV2",
+                "disable_web_page_preview": "true",
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        result = response.json()
+        if result.get("ok") is not True:
+            raise ValueError("Telegram did not confirm delivery")
+        record["messageId"] = result["result"]["message_id"]
+        record["status"] = "sent"
+    except (requests.RequestException, ValueError, KeyError):
+        # Exception URLs may contain the bot token; never log them.
+        print("Telegram outcome unresolved. Automatic retry blocked; inspect delivery ledger.")
+    write_ledger(ledger_path, ledger)
+    return record["status"] == "sent"
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--snapshot-url", default=DEFAULT_SNAPSHOT_URL)
     parser.add_argument("--grid-url", default=DEFAULT_GRID_URL)
-    parser.add_argument("--marker-path", default=DEFAULT_MARKER)
-    parser.add_argument("--min-session-date", default=None)
+    parser.add_argument("--ledger-path", type=Path, default=Path(DEFAULT_LEDGER))
+    parser.add_argument("--marker-path", type=Path, default=Path(DEFAULT_MARKER))
+    parser.add_argument("--reservation-id", default="")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--prepare", action="store_true")
+    mode.add_argument("--send-reserved", action="store_true")
     args = parser.parse_args()
-
-    payload = fetch_snapshot(args.snapshot_url)
-    return 0 if deliver_once_per_session(
-        payload,
-        marker_path=args.marker_path,
-        min_session_date=args.min_session_date,
-        grid_url=args.grid_url,
-    ) else 1
+    if args.send_reserved:
+        return 0 if send_reserved(args.ledger_path, args.reservation_id) else 1
+    manifest, summary = verify_publication(args.grid_url)
+    if args.prepare:
+        if sends_suppressed():
+            raise ValueError("Notifications are disabled")
+        _telegram_config()
+        prepared = reserve(
+            manifest,
+            summary,
+            ledger_path=args.ledger_path,
+            marker_path=args.marker_path,
+            reservation_id=args.reservation_id,
+            grid_url=args.grid_url,
+        )
+        if os.environ.get("GITHUB_OUTPUT"):
+            with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+                output.write(f"prepared={str(prepared).lower()}\n")
+        print(f"Prepared: {prepared}; session: {manifest['sessionDate']}")
+    else:
+        print(json.dumps({"dryRun": True, "publication": manifest, "summary": summary}))
+    return 0
 
 
 if __name__ == "__main__":
