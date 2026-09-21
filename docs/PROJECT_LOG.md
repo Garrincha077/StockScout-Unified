@@ -296,3 +296,12 @@
 - Verification: actual SPY/QQQ individual and bulk calls returned complete
   2026-08-28 bars; 165 Python tests passed with 2 documented skips. No scan or
   Telegram delivery was run by this patch.
+
+## 2026-09-21 — Reliable review publication and delivery, phase 1
+
+- Branch: `codex/reliable-gridview-delivery`. Implementation commit: `ff2ae42410666a967f366ca83355860e32f0c2e2` (follow-up hardening and docs remain on this branch).
+- Changes: Verify committed/deployed/active identity and archive hash; durable pre-send reservation; single HTTP send; blocked ambiguous retry; permanent links; manual dry-run default.
+- Validation: Full Python suite: 199 passed, 2 expected skips before three additional tests; final targeted delivery/workflow suite: 11 passed. Ruff passed. Cross-repo HTTP check of real 82-candidate publication passed without sending.
+- Scanner selection, rankings and scoring unchanged. No live Telegram message was sent; no production branch was merged or deployed by this implementation.
+- Caveats: coordinated three-PR rollout required; ambiguous send needs manual reconciliation; per-mode metric separation and real dated AI review remain follow-up work.
+- Next: review and activate in the order documented in `GRIDVIEW_DELIVERY.md`.
