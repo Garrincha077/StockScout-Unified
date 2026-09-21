@@ -32,7 +32,8 @@ class GridViewNotificationTests(unittest.TestCase):
                 "kell3x": 3,
                 "gapUp": 5,
                 "multiHit": 7,
-            }
+            },
+            grid_url="https://stockscout-trend-birth-review-lab.vercel.app/?snapshot=run--hash",
         )
         self.assertIn("Trend Birth GridView", message)
         self.assertIn("Kell 3x RVOL", message)

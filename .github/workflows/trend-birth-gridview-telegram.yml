@@ -2,14 +2,13 @@ name: Trend Birth GridView Telegram
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "src/stockscout_unified/gridview_notification.py"
-      - "tests/test_gridview_notification.py"
-      - ".github/workflows/trend-birth-gridview-telegram.yml"
+    inputs:
+      deliver:
+        description: "Send after verifying deployed snapshot (default is dry-run)"
+        type: boolean
+        default: false
   schedule:
-    # Runs ten minutes after the isolated LAB refresh probes.
+    # Probe deployed publications; readiness is verified, never inferred from timing.
     - cron: "27 3 * * 2-6"
       timezone: "Europe/Zagreb"
     - cron: "27 7 * * 2-6"
@@ -28,12 +27,17 @@ permissions:
 
 jobs:
   send:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      RESERVATION_ID: ${{ github.run_id }}-${{ github.run_attempt }}
     environment:
       name: production
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -45,25 +49,44 @@ jobs:
           python -m pip install -e .
 
       - name: Test GridView notification contract
-        run: python -m unittest tests/test_gridview_notification.py -v
+        run: python -m unittest tests/test_gridview_notification.py tests/test_gridview_delivery.py -v
 
-      - name: Deliver GridView summary once per session
+      - name: Verify only (manual default)
+        if: github.event_name == 'workflow_dispatch' && !inputs.deliver
+        run: python -m stockscout_unified.gridview_notification
+
+      - name: Verify deployment and reserve one delivery per session
+        id: reserve
+        if: github.event_name == 'schedule' || inputs.deliver
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          python -m stockscout_unified.gridview_notification \
-            --marker-path ".state/trend-birth-gridview-last-sent.txt" \
-            --min-session-date "2026-09-18"
+        run: python -m stockscout_unified.gridview_notification --prepare --reservation-id "$RESERVATION_ID"
 
-      - name: Persist delivery marker after successful send
+      - name: Persist reservation before any Telegram request
+        if: steps.reserve.outputs.prepared == 'true'
         run: |
-          if [ -z "$(git status --porcelain -- .state/trend-birth-gridview-last-sent.txt)" ]; then
-            echo "Delivery marker unchanged."
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .state/trend-birth-gridview-deliveries.json
+          git commit -m "chore: reserve verified GridView delivery"
+          git push origin HEAD:main
+
+      - name: Send reserved message once
+        if: success() && steps.reserve.outputs.prepared == 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python -m stockscout_unified.gridview_notification --send-reserved --reservation-id "$RESERVATION_ID"
+
+      - name: Persist receipt or unresolved outcome
+        if: always() && steps.reserve.outputs.prepared == 'true'
+        run: |
+          if [ -z "$(git status --porcelain -- .state/trend-birth-gridview-deliveries.json)" ]; then
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .state/trend-birth-gridview-last-sent.txt
-          git commit -m "chore: mark GridView Telegram delivery"
+          git add .state/trend-birth-gridview-deliveries.json
+          git commit -m "chore: record GridView delivery outcome"
           git push origin HEAD:main
