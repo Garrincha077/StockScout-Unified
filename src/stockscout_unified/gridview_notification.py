@@ -67,6 +67,19 @@ def fetch_bytes(url: str) -> bytes:
     return response.content
 
 
+def verify_active_unified(manifest: dict[str, Any], content: bytes) -> dict[str, Any]:
+    """Require the review publication to match the currently activated Unified scan."""
+    active = json.loads(content)
+    if active.get("status") != "healthy" or any(
+        active.get(field) != manifest.get(field) for field in ("runId", "sessionDate")
+    ):
+        raise ValueError("Review is behind the active Unified scan")
+    expected_sha = manifest.get("unifiedManifestSha256")
+    if expected_sha and hashlib.sha256(content).hexdigest() != expected_sha:
+        raise ValueError("Review is not bound to the active Unified activation")
+    return active
+
+
 def verify_publication(
     grid_url: str = DEFAULT_GRID_URL,
     expected_url: str = DEFAULT_PUBLICATION_URL,
@@ -112,11 +125,7 @@ def verify_publication(
         raise ValueError("Snapshot loader is not deployed")
     if json.loads(fetch_bytes(base + "/data/publication.json")) != manifest:
         raise ValueError("Publication changed during verification")
-    active = json.loads(fetch_bytes(unified_url))
-    if active.get("status") != "healthy" or any(
-        active.get(field) != manifest[field] for field in ("runId", "sessionDate")
-    ):
-        raise ValueError("Review is behind the active Unified scan")
+    verify_active_unified(manifest, fetch_bytes(unified_url))
     return manifest, summary
 
 
