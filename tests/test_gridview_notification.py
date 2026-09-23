@@ -1,6 +1,10 @@
 import unittest
 
-from stockscout_unified.gridview_notification import render_message, snapshot_summary, verify_active_unified
+from stockscout_unified.gridview_notification import (
+    render_message,
+    snapshot_summary,
+    verify_active_unified,
+)
 
 
 class GridViewNotificationTests(unittest.TestCase):
