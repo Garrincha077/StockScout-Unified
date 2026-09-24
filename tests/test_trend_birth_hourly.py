@@ -28,7 +28,7 @@ def _rows(closes: list[float]) -> list[dict]:
             "close": close,
             "volume": 1_000_000,
         }
-        for day, close in zip(_business_days(len(closes)), closes)
+        for day, close in zip(_business_days(len(closes)), closes, strict=True)
     ]
 
 
