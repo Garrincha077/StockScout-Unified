@@ -18,3 +18,17 @@ def test_gridview_workflow_reserves_before_send_and_manual_defaults_to_dry_run()
     )
     assert "success()" in steps[send]["if"]
     assert any("always()" in step.get("if", "") for step in steps[send + 1 :])
+
+
+def test_gridview_workflow_delivers_trend_birth_alerts_through_unified_ledger():
+    path = Path(__file__).parents[1] / ".github/workflows/trend-birth-gridview-telegram.yml"
+    workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert workflow["permissions"]["id-token"] == "write"
+    steps = workflow["jobs"]["send"]["steps"]
+    dry = next(step for step in steps if step.get("name") == "Verify only (manual default)")
+    assert "stockscout_unified.trend_birth_alert_notification" in dry.get("run", "")
+    deliver = next(step for step in steps if step.get("name") == "Deliver Trend Birth stage-change alerts")
+    assert "--send" in deliver.get("run", "")
+    assert "UNIFIED_DELIVERY_ENDPOINT" in deliver.get("run", "")
+    assert "TELEGRAM_BOT_TOKEN" in deliver.get("env", {})
+    assert "TELEGRAM_CHAT_ID" in deliver.get("env", {})
