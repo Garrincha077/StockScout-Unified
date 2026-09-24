@@ -10,9 +10,10 @@ from __future__ import annotations
 import argparse
 import json
 import math
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 from urllib.parse import urlencode
 
 import pandas as pd
