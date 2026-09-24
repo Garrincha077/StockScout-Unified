@@ -19,7 +19,11 @@ import pandas as pd
 import yfinance as yf
 
 from stock_scout.notifications.telegram import _escape_md_v2, split_telegram_message
-from stockscout_unified.gridview_notification import DEFAULT_GRID_URL, fetch_bytes, verify_publication
+from stockscout_unified.gridview_notification import (
+    DEFAULT_GRID_URL,
+    fetch_bytes,
+    verify_publication,
+)
 from stockscout_unified.notifications import deliver_series
 
 RULESET = "trend-birth-radar-v1"
