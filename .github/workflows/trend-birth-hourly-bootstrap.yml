@@ -17,7 +17,7 @@ jobs:
   baseline:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -40,8 +40,49 @@ jobs:
           restore-keys: |
             trend-birth-hourly-${{ runner.os }}-
 
-      - name: Bootstrap hourly baseline now
-        run: python -m stockscout_unified.trend_birth_hourly --update-state
+      - name: Bootstrap baseline from verified EOD snapshot
+        run: |
+          python - <<'PY'
+          from collections import Counter
+          from pathlib import Path
+          from stockscout_unified.trend_birth_hourly import (
+              RULESET,
+              fetch_verified_universe,
+              save_state,
+          )
+
+          manifest, candidates = fetch_verified_universe()
+          tickers = {}
+          counts = Counter()
+          for item in candidates:
+              ticker = str(item.get("ticker") or "").upper()
+              radar = item.get("trendBirth") or {}
+              if not ticker or radar.get("available") is not True:
+                  continue
+              stage = int(radar.get("stage") or 0)
+              counts[stage] += 1
+              tickers[ticker] = {
+                  "rawStage": stage,
+                  "effectiveStage": stage,
+                  "barDate": str(radar.get("barDate") or manifest["sessionDate"]),
+                  "belowCount": 0,
+                  "lastBelowBar": None,
+              }
+
+          state = {
+              "schemaVersion": 1,
+              "ruleset": RULESET,
+              "initialized": True,
+              "tickers": tickers,
+          }
+          save_state(Path(".state/trend-birth-hourly.json"), state)
+          print({
+              "sessionDate": manifest["sessionDate"],
+              "baselineTickers": len(tickers),
+              "stageCounts": dict(sorted(counts.items())),
+              "telegramSent": False,
+          })
+          PY
 
       - name: Save hourly stage state
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
