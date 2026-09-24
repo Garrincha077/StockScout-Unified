@@ -225,7 +225,7 @@ def evaluate_stage(rows: Iterable[Any]) -> dict[str, Any]:
         sane.append(close <= ema20[index] + 1.50 * bar_atr)
 
     recent_pullback_compression = any(
-        a and b and c for a, b, c in zip(near[-10:], compressed[-10:], sane[-10:])
+        a and b and c for a, b, c in zip(near[-10:], compressed[-10:], sane[-10:], strict=True)
     )
     ema10_flat = ema10_slope >= -0.05
     ema20_flat = ema20_slope >= -0.03
@@ -234,7 +234,7 @@ def evaluate_stage(rows: Iterable[Any]) -> dict[str, Any]:
     ema20_non_falling = ema20_slope >= 0
     ema10_above = ema10[-1] > ema20[-1]
     close_above = price > ema10[-1] and price > ema20[-1]
-    spread = [left - right for left, right in zip(ema10, ema20)]
+    spread = [left - right for left, right in zip(ema10, ema20, strict=True)]
     fresh_cross = ema10[-1] > ema20[-1] and ema10[-2] <= ema20[-2]
     widening = spread[-1] > 0 and spread[-1] > spread[-2]
     bullish_reexpansion = fresh_cross or widening
