@@ -24,6 +24,7 @@ concurrency:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   send:
@@ -53,7 +54,9 @@ jobs:
 
       - name: Verify only (manual default)
         if: github.event_name == 'workflow_dispatch' && !inputs.deliver
-        run: python -m stockscout_unified.gridview_notification
+        run: |
+          python -m stockscout_unified.gridview_notification
+          python -m stockscout_unified.trend_birth_alert_notification
 
       - name: Verify deployment and reserve one delivery per session
         id: reserve
@@ -90,3 +93,17 @@ jobs:
           git add .state/trend-birth-gridview-deliveries.json
           git commit -m "chore: record GridView delivery outcome"
           git push origin HEAD:main
+
+      - name: Deliver Trend Birth stage-change alerts
+        if: ${{ (github.event_name == 'schedule' || inputs.deliver) && vars.UNIFIED_DELIVERY_ENDPOINT != '' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python -m stockscout_unified.trend_birth_alert_notification \
+            --send \
+            --delivery-endpoint "${{ vars.UNIFIED_DELIVERY_ENDPOINT }}"
+
+      - name: Explain disabled Trend Birth delivery ledger
+        if: ${{ (github.event_name == 'schedule' || inputs.deliver) && vars.UNIFIED_DELIVERY_ENDPOINT == '' }}
+        run: echo "Trend Birth alerts not sent because UNIFIED_DELIVERY_ENDPOINT is not configured."
