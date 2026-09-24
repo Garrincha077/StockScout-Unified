@@ -8,9 +8,9 @@ and hands sparse stage-change messages to Unified's existing Telegram ledger.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
 import json
 import math
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlencode
