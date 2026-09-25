@@ -11,7 +11,7 @@ def test_hourly_trend_birth_workflow_is_sparse_and_safe():
     assert ".github/workflows/trend-birth-hourly.yml" in events["push"]["paths"]
     assert events["workflow_dispatch"]["inputs"]["deliver"]["default"] is False
     schedules = events["schedule"]
-    assert schedules == [{"cron": "47 9-15 * * 1-5", "timezone": "America/New_York"}]
+    assert schedules == [{"cron": "7 13-20 * * 1-5"}]
     assert workflow["permissions"]["contents"] == "read"
     assert workflow["permissions"]["id-token"] == "write"
     assert workflow["jobs"]["watch"]["environment"]["name"] == "production"
@@ -19,7 +19,9 @@ def test_hourly_trend_birth_workflow_is_sparse_and_safe():
     market = next(step for step in steps if step.get("name") == "Check NYSE regular session")
     assert "pandas_market_calendars" in market["run"]
     assert "NYSE" in market["run"]
-    bootstrap = next(step for step in steps if step.get("name") == "Bootstrap hourly baseline on watcher change")
+    baseline = next(step for step in steps if step.get("name") == "Detect restored hourly baseline")
+    assert ".state/trend-birth-hourly.json" in baseline["run"]
+    bootstrap = next(step for step in steps if step.get("name") == "Bootstrap hourly baseline when missing")
     assert "--update-state" in bootstrap["run"]
     assert "--send" not in bootstrap["run"]
     assert "UNIFIED_DELIVERY_ENDPOINT" in bootstrap["run"]
@@ -29,6 +31,8 @@ def test_hourly_trend_birth_workflow_is_sparse_and_safe():
     assert "UNIFIED_DELIVERY_ENDPOINT" in live["run"]
     assert "TELEGRAM_BOT_TOKEN" in live["env"]
     assert "TELEGRAM_CHAT_ID" in live["env"]
+    assert "github.event_name == 'push'" in live["if"]
+    assert "steps.baseline.outputs.exists == 'true'" in live["if"]
     restore = next(step for step in steps if "actions/cache/restore@" in step.get("uses", ""))
     save = next(step for step in steps if "actions/cache/save@" in step.get("uses", ""))
     assert "trend-birth-hourly-v2-" in restore["with"]["key"]
