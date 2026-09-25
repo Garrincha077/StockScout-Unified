@@ -468,7 +468,9 @@ def build_series(events: dict[str, list[dict[str, Any]]], dashboard_url: str) ->
         )
         series["trend-birth-hourly-ready"] = split_telegram_message(text)
 
-    for item in events["trigger"]:
+    triggers = events["trigger"]
+    if len(triggers) == 1:
+        item = triggers[0]
         ticker = item["ticker"]
         checks = (item.get("trendBirthHourly") or {}).get("checks") or {}
         lines = [
@@ -485,6 +487,22 @@ def build_series(events: dict[str, list[dict[str, Any]]], dashboard_url: str) ->
             _render_link(dashboard_url),
         )
         series[f"trend-birth-hourly-trigger-{ticker}"] = split_telegram_message(text)
+    elif triggers:
+        shown = triggers[:MAX_READY]
+        lines = [
+            "🚀 KELL TREND BIRTH — 4/4 TRIGGER",
+            f"{len(triggers)} new candidates",
+            "",
+        ]
+        lines.extend(f"{item['ticker']} — 4/4 intraday / provisional" for item in shown)
+        extra = len(triggers) - len(shown)
+        lines.extend(["", "Final confirmation is the completed daily bar."])
+        lines.append(f"+{extra} additional candidates — DASHBOARD" if extra else "DASHBOARD")
+        text = _escape_md_v2("\n".join(lines).strip()).replace(
+            _escape_md_v2("DASHBOARD"),
+            _render_link(dashboard_url),
+        )
+        series["trend-birth-hourly-trigger"] = split_telegram_message(text)
 
     invalidated = events["invalidated"]
     if invalidated:
