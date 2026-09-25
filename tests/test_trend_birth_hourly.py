@@ -4,6 +4,7 @@ from stockscout_unified.trend_birth_hourly import (
     apply_hysteresis,
     build_series,
     evaluate_stage,
+    merge_owner_watchlist,
     process_results,
 )
 
@@ -104,6 +105,37 @@ def test_first_ever_hourly_run_is_baseline_only():
         {"initialized": False, "tickers": {}},
     )
     assert state["initialized"] is True
+    assert all(not rows for rows in events.values())
+
+
+def test_owner_watchlist_union_adds_tracked_only_and_marks_existing():
+    merged = merge_owner_watchlist(
+        [{"ticker": "AAA", "kell_score": 80}],
+        ["aaa", "CLOV", "CLOV"],
+    )
+    by_ticker = {item["ticker"]: item for item in merged}
+    assert set(by_ticker) == {"AAA", "CLOV"}
+    assert by_ticker["AAA"]["trackedWatchlist"] is True
+    assert by_ticker["AAA"]["trackedOnly"] is False
+    assert by_ticker["CLOV"]["trackedWatchlist"] is True
+    assert by_ticker["CLOV"]["trackedOnly"] is True
+
+
+def test_new_tracked_ticker_establishes_hourly_baseline_without_alert():
+    candidates = [{"ticker": "CLOV", "trackedWatchlist": True, "trackedOnly": True}]
+    prior = {"initialized": True, "tickers": {}}
+    results = {
+        "CLOV": {
+            "available": True,
+            "stage": 4,
+            "barDate": "2026-09-24",
+            "hardInvalidation": False,
+            "missingFor4": [],
+            "checks": {},
+        }
+    }
+    state, events = process_results(candidates, results, prior)
+    assert state["tickers"]["CLOV"]["effectiveStage"] == 4
     assert all(not rows for rows in events.values())
 
 
