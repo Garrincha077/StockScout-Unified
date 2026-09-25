@@ -11,11 +11,19 @@ def test_hourly_trend_birth_workflow_is_sparse_and_safe():
     assert ".github/workflows/trend-birth-hourly.yml" in events["push"]["paths"]
     assert events["workflow_dispatch"]["inputs"]["deliver"]["default"] is False
     schedules = events["schedule"]
-    assert schedules == [{"cron": "7 13-20 * * 1-5"}]
+    assert schedules == [
+        {"cron": "7 13-20 * * 1-5"},
+        {"cron": "22 13-20 * * 1-5"},
+    ]
+    assert workflow["permissions"]["actions"] == "read"
     assert workflow["permissions"]["contents"] == "read"
     assert workflow["permissions"]["id-token"] == "write"
     assert workflow["jobs"]["watch"]["environment"]["name"] == "production"
     steps = workflow["jobs"]["watch"]["steps"]
+    fallback = next(step for step in steps if step.get("name") == "Guard fallback against duplicate hourly work")
+    assert "trend-birth-hourly.yml/runs?event=schedule" in fallback["run"]
+    assert "30 * 60" in fallback["run"]
+    assert "github.event.schedule == '22 13-20 * * 1-5'" in fallback["if"]
     market = next(step for step in steps if step.get("name") == "Check NYSE regular session")
     assert "pandas_market_calendars" in market["run"]
     assert "NYSE" in market["run"]
