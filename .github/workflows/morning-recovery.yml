@@ -1,0 +1,153 @@
+name: StockScout Morning Recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: "Comma-separated recovery targets: eod,gridview"
+        required: true
+        default: "eod,gridview"
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - ".github/recovery/stockscout-morning.trigger"
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: stockscout-morning-recovery
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve requested recovery targets
+        id: targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            targets="${{ inputs.targets }}"
+          else
+            targets="$(sed -n 's/^targets=//p' .github/recovery/stockscout-morning.trigger | tail -n 1)"
+          fi
+          targets="${targets// /}"
+          if [ -z "$targets" ]; then targets="none"; fi
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+          {
+            echo "## StockScout Morning Recovery"
+            echo
+            echo "- Trigger: `${{ github.event_name }}`"
+            echo "- Targets: `$targets`"
+            echo
+            echo "| Target | Run | Result | Public output |"
+            echo "|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dispatch requested workflows and wait for completion
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGETS: ${{ steps.targets.outputs.targets }}
+        run: |
+          set -uo pipefail
+          failed=0
+
+          selected() {
+            case ",$TARGETS," in
+              *",$1,"*) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+
+          row() {
+            printf '| %s | %s | %s | %s |\n' "$1" "$2" "$3" "$4" >> "$GITHUB_STEP_SUMMARY"
+          }
+
+          dispatch_and_wait() {
+            key="$1"
+            workflow="$2"
+            label="$3"
+            max_polls="$4"
+            shift 4
+
+            started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            args=(--method POST "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/dispatches" -f ref=main)
+            while [ "$#" -gt 0 ]; do
+              args+=(-f "$1")
+              shift
+            done
+
+            if ! gh api "${args[@]}" >/dev/null; then
+              row "$label" "-" "DISPATCH FAILED" "-"
+              failed=1
+              return
+            fi
+
+            run_id=""
+            for _ in $(seq 1 30); do
+              payload="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?branch=main&event=workflow_dispatch&per_page=20")"
+              run_id="$(printf '%s' "$payload" | jq -r --arg t "$started" '[.workflow_runs[] | select(.created_at >= $t)] | sort_by(.created_at) | .[0].id // empty')"
+              [ -n "$run_id" ] && break
+              sleep 4
+            done
+
+            if [ -z "$run_id" ]; then
+              row "$label" "-" "RUN NOT FOUND" "-"
+              failed=1
+              return
+            fi
+
+            run_url="https://github.com/$GITHUB_REPOSITORY/actions/runs/$run_id"
+            conclusion=""
+            for _ in $(seq 1 "$max_polls"); do
+              state="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id")"
+              status="$(printf '%s' "$state" | jq -r '.status')"
+              conclusion="$(printf '%s' "$state" | jq -r '.conclusion // ""')"
+              [ "$status" = "completed" ] && break
+              sleep 15
+            done
+
+            if [ "$conclusion" != "success" ]; then
+              row "$label" "[run]($run_url)" "${conclusion:-TIMEOUT}" "-"
+              failed=1
+              return
+            fi
+
+            public="n/a"
+            if [ "$key" = "eod" ]; then
+              public="pending verification"
+              for _ in $(seq 1 30); do
+                if curl -fsS "https://garrincha077.github.io/StockScout-Unified/data/manifest.json" -o /tmp/stockscout-manifest.json \
+                  && jq -e '.marketSession.date // .sessionDate // .date' /tmp/stockscout-manifest.json >/dev/null 2>&1; then
+                  public="manifest verified"
+                  break
+                fi
+                sleep 6
+              done
+              [ "$public" = "manifest verified" ] || failed=1
+            fi
+
+            row "$label" "[run]($run_url)" "SUCCESS" "$public"
+          }
+
+          if selected gridview; then
+            dispatch_and_wait gridview trend-birth-gridview-telegram.yml "Trend Birth GridView" 80 "inputs[deliver]=true"
+          fi
+
+          if selected eod; then
+            dispatch_and_wait eod eod.yml "Unified EOD" 720 "inputs[notify]=true"
+          fi
+
+          if [ "$TARGETS" = "none" ]; then
+            row "No recovery requested" "-" "NOOP" "-"
+          fi
+
+          exit "$failed"
