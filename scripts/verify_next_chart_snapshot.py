@@ -35,12 +35,18 @@ def verify(canonical_path: Path, manifest_path: Path, chart_dir: Path) -> dict[s
         raise ValueError("Next canonical hash does not match chart manifest")
 
     chart_contract = (manifest.get("assets") or {}).get("charts") or {}
-    expected_count = int(chart_contract.get("shardCount") or 0)
+    configured_shard_count = int(chart_contract.get("shardCount") or 0)
+    if configured_shard_count <= 0:
+        raise ValueError("Next chart manifest has invalid shardCount")
     chart_files = sorted(chart_dir.glob("*.json"))
-    if len(chart_files) != expected_count:
+    if len(chart_files) > configured_shard_count:
         raise ValueError(
-            f"Next chart shard count mismatch: {len(chart_files)} != {expected_count}"
+            "Next chart file count exceeds configured shard bucket count: "
+            f"{len(chart_files)} > {configured_shard_count}"
         )
+    for path in chart_files:
+        if not path.stem.isdigit() or int(path.stem) >= configured_shard_count:
+            raise ValueError(f"Next chart shard is outside configured bucket range: {path.name}")
     file_bytes = [(f"charts/{path.name}", path.read_bytes()) for path in chart_files]
     aggregate_input = _encoded(
         [{"path": name, "sha256": _sha256(data)} for name, data in file_bytes]

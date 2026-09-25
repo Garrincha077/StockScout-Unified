@@ -64,3 +64,15 @@ def test_rejects_tampered_chart_shard(tmp_path) -> None:
 
     with pytest.raises(ValueError, match="aggregate hash mismatch"):
         verify(canonical, manifest, charts)
+
+
+def test_allows_sparse_shard_buckets_when_coverage_is_complete(tmp_path) -> None:
+    canonical, manifest, charts = _write_fixture(tmp_path)
+    payload = json.loads(manifest.read_bytes())
+    payload["assets"]["charts"]["shardCount"] = 4
+    manifest.write_bytes(_encoded(payload))
+
+    result = verify(canonical, manifest, charts)
+
+    assert result["shards"] == 2
+    assert result["tickers"] == 2
