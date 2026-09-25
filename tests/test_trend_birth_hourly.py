@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 
 from stockscout_unified.trend_birth_hourly import (
+    CHECK_LABELS,
     apply_hysteresis,
     build_series,
     evaluate_stage,
@@ -194,4 +195,29 @@ def test_additional_candidates_message_keeps_dashboard_link():
     )
     text = "\n".join(series["trend-birth-hourly-ready"])
     assert "+2 additional candidates" in text
+    assert "[View dashboard](" in text
+
+
+def test_multiple_triggers_are_grouped_to_avoid_telegram_spam():
+    triggers = []
+    for index in range(8):
+        triggers.append(
+            {
+                "ticker": f"X{index}",
+                "kell_score": 100 - index,
+                "trendBirthHourly": {
+                    "missingFor4": [],
+                    "checks": {key: True for key, _ in CHECK_LABELS},
+                },
+            }
+        )
+    url = "https://example.test/?snapshot=abc--" + "b" * 64
+    series = build_series(
+        {"ready": [], "trigger": triggers, "invalidated": []},
+        url,
+    )
+    assert list(series) == ["trend-birth-hourly-trigger"]
+    text = "\n".join(series["trend-birth-hourly-trigger"])
+    assert "8 new candidates" in text
+    assert "+3 additional candidates" in text
     assert "[View dashboard](" in text
