@@ -379,7 +379,7 @@ def merge_owner_watchlist(
             by_ticker[ticker] = current
         else:
             current["trackedWatchlist"] = True
-            current["trackedOnly"] = False
+            current.setdefault("trackedOnly", False)
     return merged
 
 
