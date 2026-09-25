@@ -43,11 +43,13 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements.lock
+          cache-dependency-path: |
+            requirements.lock
+            requirements-dev.lock
 
       - name: Install watcher runtime
         run: |
-          python -m pip install -r requirements.lock
+          python -m pip install -r requirements.lock -r requirements-dev.lock
           python -m pip install -e .
 
       - name: Test hourly Trend Birth contract
