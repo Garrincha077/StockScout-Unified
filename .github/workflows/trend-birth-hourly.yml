@@ -16,10 +16,10 @@ on:
         type: boolean
         default: false
   schedule:
-    # Once per hour during the potential NYSE regular-session window.
-    # A calendar gate below skips holidays and early-close periods.
-    - cron: "47 9-15 * * 1-5"
-      timezone: "America/New_York"
+    # UTC-only schedule avoids timezone registration issues in GitHub Actions.
+    # 13:07-20:07 UTC spans both EDT and EST NYSE regular-session windows.
+    # The NYSE calendar gate below still skips holidays, pre-open hours and early closes.
+    - cron: "7 13-20 * * 1-5"
 
 concurrency:
   group: trend-birth-hourly-watch
@@ -100,8 +100,19 @@ jobs:
           restore-keys: |
             trend-birth-hourly-v2-${{ runner.os }}-
 
-      - name: Bootstrap hourly baseline on watcher change
-        if: ${{ github.event_name == 'push' && steps.market.outputs.open == 'true' && vars.UNIFIED_DELIVERY_ENDPOINT != '' }}
+      - name: Detect restored hourly baseline
+        if: ${{ github.event_name == 'workflow_dispatch' || steps.market.outputs.open == 'true' }}
+        id: baseline
+        shell: bash
+        run: |
+          if [ -s .state/trend-birth-hourly.json ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bootstrap hourly baseline when missing
+        if: ${{ steps.market.outputs.open == 'true' && steps.baseline.outputs.exists != 'true' && vars.UNIFIED_DELIVERY_ENDPOINT != '' }}
         run: |
           python -m stockscout_unified.trend_birth_hourly \
             --update-state \
@@ -112,7 +123,7 @@ jobs:
         run: python -m stockscout_unified.trend_birth_hourly
 
       - name: Run hourly watcher and deliver sparse alerts
-        if: ${{ ((github.event_name == 'schedule' && steps.market.outputs.open == 'true') || inputs.deliver) && vars.UNIFIED_DELIVERY_ENDPOINT != '' }}
+        if: ${{ ((((github.event_name == 'schedule' || github.event_name == 'push') && steps.market.outputs.open == 'true' && steps.baseline.outputs.exists == 'true') || inputs.deliver)) && vars.UNIFIED_DELIVERY_ENDPOINT != '' }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -134,5 +145,5 @@ jobs:
         run: echo "NYSE regular session is closed; Trend Birth evaluation skipped."
 
       - name: Explain disabled delivery
-        if: ${{ ((github.event_name == 'schedule' && steps.market.outputs.open == 'true') || inputs.deliver) && vars.UNIFIED_DELIVERY_ENDPOINT == '' }}
+        if: ${{ ((((github.event_name == 'schedule' || github.event_name == 'push') && steps.market.outputs.open == 'true') || inputs.deliver)) && vars.UNIFIED_DELIVERY_ENDPOINT == '' }}
         run: echo "Hourly Trend Birth alerts are paused because UNIFIED_DELIVERY_ENDPOINT is not configured."
