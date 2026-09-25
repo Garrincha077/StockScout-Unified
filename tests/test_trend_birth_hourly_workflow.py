@@ -10,11 +10,14 @@ def test_hourly_trend_birth_workflow_is_sparse_and_safe():
     assert "push" not in events
     assert events["workflow_dispatch"]["inputs"]["deliver"]["default"] is False
     schedules = events["schedule"]
-    assert schedules == [{"cron": "17 14-23 * * 1-5", "timezone": "Europe/Zagreb"}]
+    assert schedules == [{"cron": "35 9-15 * * 1-5", "timezone": "America/New_York"}]
     assert workflow["permissions"]["contents"] == "read"
     assert workflow["permissions"]["id-token"] == "write"
     assert workflow["jobs"]["watch"]["environment"]["name"] == "production"
     steps = workflow["jobs"]["watch"]["steps"]
+    market = next(step for step in steps if step.get("name") == "Check NYSE regular session")
+    assert "pandas_market_calendars" in market["run"]
+    assert "NYSE" in market["run"]
     live = next(step for step in steps if step.get("name") == "Run hourly watcher and deliver sparse alerts")
     assert "--update-state" in live["run"]
     assert "--send" in live["run"]
