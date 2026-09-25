@@ -8,8 +8,8 @@ on:
         type: boolean
         default: false
   schedule:
-    # Hourly through the useful US pre-market / regular-session window.
-    - cron: "17 14-23 * * 1-5"
+    # Check once per hour on US trading weekdays; alerts remain stage-change only.
+    - cron: "17 * * * 1-5"
       timezone: "Europe/Zagreb"
 
 concurrency:
