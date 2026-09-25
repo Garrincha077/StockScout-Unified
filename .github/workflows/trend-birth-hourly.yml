@@ -20,12 +20,16 @@ on:
     # 13:07-20:07 UTC spans both EDT and EST NYSE regular-session windows.
     # The NYSE calendar gate below still skips holidays, pre-open hours and early closes.
     - cron: "7 13-20 * * 1-5"
+    # Fallback 15 minutes later. It self-skips if a healthy scheduled run
+    # already exists for the current hour.
+    - cron: "22 13-20 * * 1-5"
 
 concurrency:
   group: trend-birth-hourly-watch
   cancel-in-progress: true
 
 permissions:
+  actions: read
   contents: read
   id-token: write
 
@@ -37,9 +41,74 @@ jobs:
     environment:
       name: production
     steps:
+      - name: Guard fallback against duplicate hourly work
+        id: fallback_guard
+        if: ${{ github.event_name == 'schedule' && github.event.schedule == '22 13-20 * * 1-5' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import datetime as dt
+          import json
+          import os
+          import urllib.request
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          current_run = int(os.environ["GITHUB_RUN_ID"])
+          token = os.environ["GH_TOKEN"]
+          url = (
+              f"https://api.github.com/repos/{repo}/actions/workflows/"
+              "trend-birth-hourly.yml/runs?event=schedule&per_page=20"
+          )
+          request = urllib.request.Request(
+              url,
+              headers={
+                  "Authorization": f"Bearer {token}",
+                  "Accept": "application/vnd.github+json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+          )
+          with urllib.request.urlopen(request, timeout=20) as response:
+              payload = json.load(response)
+
+          now = dt.datetime.now(dt.timezone.utc)
+          healthy = None
+          bad = {"failure", "cancelled", "timed_out", "action_required", "stale"}
+
+          for run in payload.get("workflow_runs", []):
+              if int(run.get("id") or 0) == current_run:
+                  continue
+              created_raw = str(run.get("created_at") or "")
+              if not created_raw:
+                  continue
+              created = dt.datetime.fromisoformat(created_raw.replace("Z", "+00:00"))
+              age = (now - created).total_seconds()
+              if not (0 <= age <= 30 * 60):
+                  continue
+              conclusion = run.get("conclusion")
+              if run.get("status") in {"queued", "in_progress"} or (
+                  run.get("status") == "completed" and conclusion not in bad
+              ):
+                  healthy = {
+                      "id": run.get("id"),
+                      "status": run.get("status"),
+                      "conclusion": conclusion,
+                      "created_at": created_raw,
+                  }
+                  break
+
+          skip = healthy is not None
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"skip={'true' if skip else 'false'}\n")
+          print({"fallback_skip": skip, "healthy_recent_run": healthy})
+          PY
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ steps.fallback_guard.outputs.skip != 'true' }}
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: ${{ steps.fallback_guard.outputs.skip != 'true' }}
         with:
           python-version: "3.12"
           cache: pip
@@ -48,14 +117,17 @@ jobs:
             requirements-dev.lock
 
       - name: Install watcher runtime
+        if: ${{ steps.fallback_guard.outputs.skip != 'true' }}
         run: |
           python -m pip install -r requirements.lock -r requirements-dev.lock
           python -m pip install -e .
 
       - name: Test hourly Trend Birth contract
+        if: ${{ steps.fallback_guard.outputs.skip != 'true' }}
         run: python -m pytest -q tests/test_trend_birth_hourly.py tests/test_trend_birth_alert_notification.py tests/test_trend_birth_hourly_workflow.py
 
       - name: Check NYSE regular session
+        if: ${{ steps.fallback_guard.outputs.skip != 'true' }}
         id: market
         shell: bash
         run: |
@@ -141,7 +213,7 @@ jobs:
           key: trend-birth-hourly-v2-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Explain closed market
-        if: ${{ github.event_name == 'schedule' && steps.market.outputs.open != 'true' }}
+        if: ${{ github.event_name == 'schedule' && steps.fallback_guard.outputs.skip != 'true' && steps.market.outputs.open != 'true' }}
         run: echo "NYSE regular session is closed; Trend Birth evaluation skipped."
 
       - name: Explain disabled delivery
