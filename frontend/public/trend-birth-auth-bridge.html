@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#08111f">
+  <title>Preparing secure sign-in…</title>
+</head>
+<body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#08111f;color:#dbe8f5;font:14px system-ui">
+  <main style="text-align:center;padding:24px">
+    <strong>Preparing secure Trend Birth sign-in…</strong>
+    <p style="color:#8ea0b7">You will return automatically.</p>
+  </main>
+  <script>
+    (function(){
+      var KEY='stockscout:trend-birth-auth-bridge';
+      var TARGET='https://stockscout-trend-birth-review-lab.vercel.app/?tb_auth=prepared';
+      try{
+        localStorage.setItem(KEY,String(Date.now()));
+        location.replace(TARGET);
+      }catch(_err){
+        document.querySelector('p').textContent='Could not prepare sign-in. Return to Trend Birth and try again.';
+      }
+    })();
+  </script>
+</body>
+</html>
