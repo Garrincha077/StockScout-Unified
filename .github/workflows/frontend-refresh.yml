@@ -55,18 +55,16 @@ jobs:
           set -euo pipefail
           found=""
           while IFS=$'\t' read -r artifact_id source_run created_at; do
-            rm -rf .staging/candidate .staging/artifact.zip
-            mkdir -p .staging/candidate
+            rm -rf .staging/candidate .staging/unzip .staging/artifact.zip
+            mkdir -p .staging/candidate/pages .staging/unzip
             if ! gh api "/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > .staging/artifact.zip; then
               continue
             fi
-            unzip -q .staging/artifact.zip -d .staging/candidate
-            if [ -f .staging/candidate/artifact.tar ]; then
-              mkdir -p .staging/candidate/pages
-              tar -xf .staging/candidate/artifact.tar -C .staging/candidate/pages
+            unzip -q .staging/artifact.zip -d .staging/unzip
+            if [ -f .staging/unzip/artifact.tar ]; then
+              tar -xf .staging/unzip/artifact.tar -C .staging/candidate/pages
             else
-              mkdir -p .staging/candidate/pages
-              cp -a .staging/candidate/. .staging/candidate/pages/
+              cp -a .staging/unzip/. .staging/candidate/pages/
             fi
             if LIVE_RUN="$LIVE_RUN" LIVE_SESSION="$LIVE_SESSION" python - <<'PY'
           import json, os
