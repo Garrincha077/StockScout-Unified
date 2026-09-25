@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = next((ROOT / "supabase" / "migrations").glob("*_owner_state_only.sql"))
 OPERATIONS = ROOT / "supabase" / "functions" / "unified-operations" / "index.ts"
-WATCHLIST_EDGE_GRANT = ROOT / "supabase" / "migrations" / "20260925070000_trend_birth_watchlist_read.sql"
+WATCHLIST_EDGE_GRANT = ROOT / "supabase" / "migrations" / "20260925065044_trend_birth_watchlist_read.sql"
 
 
 def test_owner_state_is_mode_and_price_basis_scoped() -> None:
