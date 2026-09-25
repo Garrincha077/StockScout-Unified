@@ -4,12 +4,19 @@ import{buildIndicatorSeries,confirmationsPass,crossed,isUpsloping,normalizedSlop
 const SCHEMA = "stockscout_unified_api";
 const EXPECTED_ISSUER = "https://token.actions.githubusercontent.com";
 const EXPECTED_AUDIENCE = "stockscout-unified-operations";
-const EXPECTED_REPOSITORY = "Garrincha077/StockScout-Unified";
-const EXPECTED_REF = "refs/heads/main";
-const EXPECTED_WORKFLOWS = new Set([
-  `${EXPECTED_REPOSITORY}/.github/workflows/eod.yml@${EXPECTED_REF}`,
-  `${EXPECTED_REPOSITORY}/.github/workflows/notification-retry.yml@${EXPECTED_REF}`,
+const UNIFIED_REPOSITORY = "Garrincha077/StockScout-Unified";
+const UNIFIED_REF = "refs/heads/main";
+const UNIFIED_PRODUCTION_WORKFLOWS = new Set([
+  `${UNIFIED_REPOSITORY}/.github/workflows/eod.yml@${UNIFIED_REF}`,
+  `${UNIFIED_REPOSITORY}/.github/workflows/notification-retry.yml@${UNIFIED_REF}`,
+  `${UNIFIED_REPOSITORY}/.github/workflows/trend-birth-hourly.yml@${UNIFIED_REF}`,
+  `${UNIFIED_REPOSITORY}/.github/workflows/trend-birth-gridview-telegram.yml@${UNIFIED_REF}`,
 ]);
+const TREND_BIRTH_REPOSITORY = "Garrincha077/StockScout-Trend-Birth";
+const TREND_BIRTH_REF = "refs/heads/feature/unified-review-grid-lab";
+const TREND_BIRTH_WATCHLIST_WORKFLOW =
+  `${TREND_BIRTH_REPOSITORY}/.github/workflows/unified-review-grid-lab.yml@${TREND_BIRTH_REF}`;
+type CallerScope = "unified-production" | "trend-birth-watchlist";
 const UNIFIED_PAGES_BASE_URL = "https://garrincha077.github.io/StockScout-Unified";
 const MODE_IDS = ["bottom-fishing", "next", "ryan-original"] as const;
 
@@ -63,7 +70,7 @@ function decodePart<T>(value: string): T {
   return JSON.parse(new TextDecoder().decode(bytes(value))) as T;
 }
 
-async function verifyGithubOidc(request: Request): Promise<Claims> {
+async function verifyGithubOidc(request: Request): Promise<{ claims: Claims; scope: CallerScope }> {
   const authorization = request.headers.get("authorization") ?? "";
   if (!authorization.startsWith("Bearer ")) throw new Error("missing GitHub OIDC bearer token");
   const token = authorization.slice(7);
@@ -81,8 +88,22 @@ async function verifyGithubOidc(request: Request): Promise<Claims> {
   const key = await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
   const valid = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, bytes(parts[2]), new TextEncoder().encode(`${parts[0]}.${parts[1]}`));
   if (!valid) throw new Error("invalid GitHub OIDC signature");
-  if (claims.repository !== EXPECTED_REPOSITORY || claims.ref !== EXPECTED_REF || !EXPECTED_WORKFLOWS.has(String(claims.workflow_ref)) || claims.environment !== "production" || String(claims.ref_protected) !== "true") throw new Error("GitHub OIDC workflow claims are outside the production allowlist");
-  return claims;
+  const repository = String(claims.repository ?? "");
+  const ref = String(claims.ref ?? "");
+  const workflowRef = String(claims.workflow_ref ?? "");
+  const unifiedProduction =
+    repository === UNIFIED_REPOSITORY
+    && ref === UNIFIED_REF
+    && UNIFIED_PRODUCTION_WORKFLOWS.has(workflowRef)
+    && claims.environment === "production"
+    && String(claims.ref_protected) === "true";
+  const trendBirthWatchlist =
+    repository === TREND_BIRTH_REPOSITORY
+    && ref === TREND_BIRTH_REF
+    && workflowRef === TREND_BIRTH_WATCHLIST_WORKFLOW;
+  if (unifiedProduction) return { claims, scope: "unified-production" };
+  if (trendBirthWatchlist) return { claims, scope: "trend-birth-watchlist" };
+  throw new Error("GitHub OIDC workflow claims are outside the allowlist");
 }
 
 function env(name: string): string {
@@ -125,6 +146,19 @@ function integer(value: unknown, label: string, minimum: number, maximum: number
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < minimum || parsed > maximum) throw new Error(`${label} is invalid`);
   return parsed;
+}
+
+async function watchlistTickers(): Promise<Json> {
+  const user = await ownerId();
+  const rows = await database(
+    `unified_watchlist_items?select=ticker&user_id=eq.${user}&order=ticker.asc&limit=500`,
+  ) as Array<{ ticker?: unknown }>;
+  const tickers = [...new Set(
+    rows
+      .map((row) => String(row.ticker ?? "").trim().toUpperCase())
+      .filter((ticker) => /^[A-Z0-9._-]{1,20}$/.test(ticker)),
+  )].sort();
+  return { tickers, count: tickers.length };
 }
 
 async function deliveryGet(body: Record<string, unknown>): Promise<Json> {
@@ -484,9 +518,13 @@ if (import.meta.main) Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return response(204, null);
   if (request.method !== "POST") return response(405, { ok: false, error: "method_not_allowed" });
   try {
-    await verifyGithubOidc(request);
+    const caller = await verifyGithubOidc(request);
     const body = await request.json() as Record<string, unknown>;
     const action = text(body.action, "action", 40);
+    if (caller.scope === "trend-birth-watchlist" && action !== "watchlist_tickers") {
+      return response(403, { ok: false, error: "watchlist_only_scope" });
+    }
+    if (action === "watchlist_tickers") return response(200, { ok: true, data: await watchlistTickers() });
     if (action === "delivery_get") return response(200, { ok: true, data: await deliveryGet(body) });
     if (action === "delivery_mark") return response(200, { ok: true, data: await deliveryMark(body) });
     if (action === "evaluate_alerts") return response(200, { ok: true, data: await evaluateAlerts(body) });
