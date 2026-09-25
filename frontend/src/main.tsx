@@ -6,6 +6,7 @@ import App from './App'
 import {StockScoutDataProvider} from './data/StockScoutDataProvider'
 import {OwnerDataProvider} from './owner/OwnerDataProvider'
 import {ModeProvider} from './modes/ModeProvider'
+import {forwardTrendBirthAuthIfPending} from './owner/trendBirthAuthBridge'
 import './styles.css'
 import './terminal.css'
 import './datafirst.css'
@@ -18,13 +19,17 @@ import './mobile-grid-scroll.css'
 import './stockscout-eod.css'
 import './cockpit.css'
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <ModeProvider><OwnerDataProvider><StockScoutDataProvider><App /></StockScoutDataProvider></OwnerDataProvider></ModeProvider>
-  </StrictMode>,
-)
+const forwardedTrendBirthAuth=forwardTrendBirthAuthIfPending()
 
-if('serviceWorker'in navigator&&import.meta.env.PROD&&!navigator.webdriver){
+if(!forwardedTrendBirthAuth){
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <ModeProvider><OwnerDataProvider><StockScoutDataProvider><App /></StockScoutDataProvider></OwnerDataProvider></ModeProvider>
+    </StrictMode>,
+  )
+}
+
+if(!forwardedTrendBirthAuth&&'serviceWorker'in navigator&&import.meta.env.PROD&&!navigator.webdriver){
   window.addEventListener('load',()=>{
     const tickerIndex=location.pathname.toLowerCase().indexOf('/ticker/')
     const appRoot=tickerIndex>=0?`${location.pathname.slice(0,tickerIndex)}/`:location.pathname.endsWith('/')?location.pathname:location.pathname.replace(/[^/]+$/,'')

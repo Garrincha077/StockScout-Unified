@@ -1,0 +1,139 @@
+name: Frontend-only refresh on main
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-refresh.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: stockscout-unified-frontend-refresh
+  cancel-in-progress: false
+
+jobs:
+  build-existing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      run_id: ${{ steps.live.outputs.run_id }}
+    steps:
+      - name: Check out current Unified frontend
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read currently active immutable Pages identity
+        id: live
+        run: |
+          mkdir -p .staging
+          curl --fail --silent --show-error --retry 3 \
+            https://garrincha077.github.io/StockScout-Unified/data/manifest.json \
+            -o .staging/live-manifest.json
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          manifest=json.loads(Path(".staging/live-manifest.json").read_text())
+          if manifest.get("status")!="healthy":
+              raise SystemExit("active Pages manifest is not healthy")
+          run_id=str(manifest.get("runId") or "").strip()
+          session=str(manifest.get("sessionDate") or "").strip()
+          if not run_id or not session:
+              raise SystemExit("active Pages identity is incomplete")
+          print(f"run_id={run_id}")
+          print(f"session_date={session}")
+          PY
+
+      - name: Recover the exact currently active Pages artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LIVE_RUN: ${{ steps.live.outputs.run_id }}
+          LIVE_SESSION: ${{ steps.live.outputs.session_date }}
+        run: |
+          set -euo pipefail
+          found=""
+          while IFS=$'\t' read -r artifact_id source_run created_at; do
+            rm -rf .staging/candidate .staging/unzip .staging/artifact.zip
+            mkdir -p .staging/candidate/pages .staging/unzip
+            if ! gh api "/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > .staging/artifact.zip; then
+              continue
+            fi
+            unzip -q .staging/artifact.zip -d .staging/unzip
+            if [ -f .staging/unzip/artifact.tar ]; then
+              tar -xf .staging/unzip/artifact.tar -C .staging/candidate/pages
+            else
+              cp -a .staging/unzip/. .staging/candidate/pages/
+            fi
+            if LIVE_RUN="$LIVE_RUN" LIVE_SESSION="$LIVE_SESSION" python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path(".staging/candidate/pages/data/manifest.json")
+          if not p.exists():
+              raise SystemExit(1)
+          m=json.loads(p.read_text())
+          if m.get("runId")!=os.environ["LIVE_RUN"] or m.get("sessionDate")!=os.environ["LIVE_SESSION"] or m.get("status")!="healthy":
+              raise SystemExit(1)
+          PY
+            then
+              found="$artifact_id"
+              break
+            fi
+          done < <(
+            gh api "/repos/$GITHUB_REPOSITORY/actions/artifacts?name=github-pages&per_page=100" \
+              --jq '.artifacts[] | select(.expired==false) | [.id,.workflow_run.id,.created_at] | @tsv'
+          )
+          test -n "$found" || { echo "No non-expired Pages artifact matches the active run" >&2; exit 1; }
+          echo "Recovered active Pages artifact $found"
+
+      - name: Reuse immutable public data with the current frontend
+        run: |
+          rm -rf frontend/public/data
+          mkdir -p frontend/public
+          cp -a .staging/candidate/pages/data frontend/public/data
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Test and build frontend without changing scan identity
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          EXPECTED_RUN_ID: ${{ steps.live.outputs.run_id }}
+          EXPECTED_SESSION_DATE: ${{ steps.live.outputs.session_date }}
+        run: |
+          npm ci --prefix frontend
+          npm run check --prefix frontend
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          manifest=json.loads(Path("frontend/dist/data/manifest.json").read_text())
+          if manifest.get("runId")!=os.environ["EXPECTED_RUN_ID"]:
+              raise SystemExit("frontend refresh changed runId")
+          if manifest.get("sessionDate")!=os.environ["EXPECTED_SESSION_DATE"]:
+              raise SystemExit("frontend refresh changed sessionDate")
+          if manifest.get("status")!="healthy":
+              raise SystemExit("frontend refresh built unhealthy manifest")
+          if not Path("frontend/dist/trend-birth-auth-bridge.html").exists():
+              raise SystemExit("Trend Birth auth bridge page missing from frontend build")
+          PY
+
+      - name: Upload verified frontend-only Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: frontend/dist
+          retention-days: 14
+
+  deploy-pages:
+    needs: build-existing
+    uses: ./.github/workflows/deploy-pages.yml
+    with:
+      run_id: ${{ needs.build-existing.outputs.run_id }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
