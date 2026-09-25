@@ -138,12 +138,13 @@ jobs:
             row "$label" "[run]($run_url)" "SUCCESS" "$public"
           }
 
-          if selected gridview; then
-            dispatch_and_wait gridview trend-birth-gridview-telegram.yml "Trend Birth GridView" 80 "inputs[deliver]=true"
-          fi
-
+          # EOD must finish and publish first so Trend Birth reads the newest deployed session.
           if selected eod; then
             dispatch_and_wait eod eod.yml "Unified EOD" 720 "inputs[notify]=true"
+          fi
+
+          if selected gridview; then
+            dispatch_and_wait gridview trend-birth-gridview-telegram.yml "Trend Birth GridView" 80 "inputs[deliver]=true"
           fi
 
           if [ "$TARGETS" = "none" ]; then
