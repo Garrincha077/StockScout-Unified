@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = next((ROOT / "supabase" / "migrations").glob("*_owner_state_only.sql"))
 OPERATIONS = ROOT / "supabase" / "functions" / "unified-operations" / "index.ts"
+WATCHLIST_EDGE_GRANT = ROOT / "supabase" / "migrations" / "20260925070000_trend_birth_watchlist_read.sql"
 
 
 def test_owner_state_is_mode_and_price_basis_scoped() -> None:
@@ -37,6 +38,8 @@ def test_browser_and_edge_grants_are_explicit_and_least_privilege() -> None:
     assert "grant usage on schema stockscout_unified_api to service_role" in sql
     assert "grant select on stockscout_unified_api.owner_allowlist to service_role" in sql
     assert "grant select on stockscout_unified_api.unified_alerts to service_role" in sql
+    watchlist_sql = WATCHLIST_EDGE_GRANT.read_text(encoding="utf-8").lower()
+    assert "grant select on stockscout_unified_api.unified_watchlist_items to service_role" in watchlist_sql
     assert "grant select,insert on stockscout_unified_api.unified_alert_events to service_role" in sql
     assert (
         "grant select,insert,update on "
@@ -62,6 +65,10 @@ def test_operations_endpoint_is_github_oidc_scoped_and_has_no_static_publish_sec
     assert "delivery_get" in source
     assert "delivery_mark" in source
     assert "evaluate_alerts" in source
+    assert "watchlist_tickers" in source
+    assert "trend-birth-watchlist" in source
+    assert "Garrincha077/StockScout-Trend-Birth" in source
+    assert "watchlist_only_scope" in source
     assert "SUPABASE_SERVICE_ROLE_KEY" in source
     assert "UNIFIED_PUBLISH_TOKEN" not in source
     assert "TELEGRAM_BOT_TOKEN" not in source

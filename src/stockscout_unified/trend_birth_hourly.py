@@ -20,6 +20,8 @@ import pandas as pd
 import yfinance as yf
 
 from stock_scout.notifications.telegram import _escape_md_v2, split_telegram_message
+from stockscout_eod.github_oidc import github_oidc_token
+from stockscout_eod.market_cache import _post
 from stockscout_unified.gridview_notification import (
     DEFAULT_GRID_URL,
     fetch_bytes,
@@ -336,6 +338,51 @@ def _candidate_rank(item: dict[str, Any]) -> tuple[float, float, float, str]:
     )
 
 
+def fetch_owner_watchlist(endpoint: str) -> list[str]:
+    if not endpoint:
+        return []
+    token = github_oidc_token("stockscout-unified-operations")
+    payload = _post(endpoint, token, {"action": "watchlist_tickers"})
+    rows = payload.get("tickers") if isinstance(payload, dict) else []
+    return sorted({
+        str(ticker).strip().upper()
+        for ticker in (rows or [])
+        if str(ticker).strip()
+    })
+
+
+def merge_owner_watchlist(
+    candidates: list[dict[str, Any]],
+    tickers: Iterable[str],
+) -> list[dict[str, Any]]:
+    merged = [dict(item) for item in candidates]
+    by_ticker = {
+        str(item.get("ticker") or "").upper(): item
+        for item in merged
+        if item.get("ticker")
+    }
+    for raw in tickers:
+        ticker = str(raw or "").strip().upper()
+        if not ticker:
+            continue
+        current = by_ticker.get(ticker)
+        if current is None:
+            current = {
+                "ticker": ticker,
+                "trackedWatchlist": True,
+                "trackedOnly": True,
+                "kell_score": 0.0,
+                "kell_readiness_score": 0.0,
+                "kell_quality_score": 0.0,
+            }
+            merged.append(current)
+            by_ticker[ticker] = current
+        else:
+            current["trackedWatchlist"] = True
+            current.setdefault("trackedOnly", False)
+    return merged
+
+
 def process_results(
     candidates: list[dict[str, Any]],
     results: dict[str, dict[str, Any]],
@@ -357,6 +404,8 @@ def process_results(
         next_tickers[ticker] = next_entry
 
         if not initialized:
+            continue
+        if item.get("trackedWatchlist") and previous is None:
             continue
         enriched = {
             **item,
@@ -544,6 +593,8 @@ def main() -> int:
     args = parser.parse_args()
 
     manifest, candidates = fetch_verified_universe(args.grid_url)
+    owner_watchlist = fetch_owner_watchlist(args.delivery_endpoint) if args.delivery_endpoint else []
+    candidates = merge_owner_watchlist(candidates, owner_watchlist)
     live = fetch_live_results(candidates)
     prior = load_state(args.state_path)
     next_state, events = process_results(candidates, live, prior)
@@ -554,6 +605,7 @@ def main() -> int:
         "ruleset": RULESET,
         "sessionDate": manifest["sessionDate"],
         "universe": len(candidates),
+        "trackedWatchlist": len(owner_watchlist),
         "liveAvailable": sum(result.get("available") is True for result in live.values()),
         "ready": len(events["ready"]),
         "trigger": len(events["trigger"]),
