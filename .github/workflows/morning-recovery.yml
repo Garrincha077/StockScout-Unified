@@ -48,8 +48,8 @@ jobs:
           targets="${targets// /}"
           session_date="${session_date// /}"
           if [ -z "$targets" ]; then targets="none"; fi
-          if [[ "$targets" == *"eod"* ]] && [[ ! "$session_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
-            echo "::error::EOD recovery requires session_date=YYYY-MM-DD"
+          if [[ "$targets" == *"eod"* || "$targets" == *"gridview"* ]] && [[ ! "$session_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+            echo "::error::EOD/GridView recovery requires session_date=YYYY-MM-DD"
             exit 1
           fi
           echo "targets=$targets" >> "$GITHUB_OUTPUT"
@@ -156,13 +156,62 @@ jobs:
             row "$label" "[run]($run_url)" "SUCCESS" "$public"
           }
 
+          wait_for_gridview_ready() {
+            deployed_url="https://stockscout-trend-birth-review-lab.vercel.app/data/publication.json"
+            committed_url="https://raw.githubusercontent.com/Garrincha077/StockScout-Trend-Birth/feature/unified-review-grid-lab/lab/data/publication.json"
+            unified_url="https://garrincha077.github.io/StockScout-Unified/data/manifest.json"
+
+            for _ in $(seq 1 90); do
+              if curl -fsS -H 'Cache-Control: no-cache' "$deployed_url?recovery=$(date +%s)" -o /tmp/grid-deployed.json \
+                && curl -fsS -H 'Cache-Control: no-cache' "$committed_url?recovery=$(date +%s)" -o /tmp/grid-committed.json \
+                && curl -fsS -H 'Cache-Control: no-cache' "$unified_url?recovery=$(date +%s)" -o /tmp/unified-live.json; then
+                deployed_session="$(jq -r '.sessionDate // empty' /tmp/grid-deployed.json)"
+                committed_session="$(jq -r '.sessionDate // empty' /tmp/grid-committed.json)"
+                unified_session="$(jq -r '.sessionDate // .marketSession.date // empty' /tmp/unified-live.json)"
+                deployed_run="$(jq -r '.runId // empty' /tmp/grid-deployed.json)"
+                committed_run="$(jq -r '.runId // empty' /tmp/grid-committed.json)"
+                unified_run="$(jq -r '.runId // empty' /tmp/unified-live.json)"
+                unified_status="$(jq -r '.status // empty' /tmp/unified-live.json)"
+
+                if cmp -s /tmp/grid-deployed.json /tmp/grid-committed.json \
+                  && [ "$deployed_session" = "$SESSION_DATE" ] \
+                  && [ "$committed_session" = "$SESSION_DATE" ] \
+                  && [ "$unified_session" = "$SESSION_DATE" ] \
+                  && [ "$deployed_run" = "$committed_run" ] \
+                  && [ "$deployed_run" = "$unified_run" ] \
+                  && [ "$unified_status" = "healthy" ]; then
+                  echo "GridView deployment is ready for $SESSION_DATE ($deployed_run)." >> "$GITHUB_STEP_SUMMARY"
+                  return 0
+                fi
+              fi
+              sleep 10
+            done
+
+            echo "::error::GridView deployment did not converge to Unified session $SESSION_DATE within 15 minutes"
+            {
+              echo
+              echo "### GridView readiness timeout"
+              echo
+              echo "- Expected session: `$SESSION_DATE`"
+              echo "- Deployed: `${deployed_session:-unknown}` / `${deployed_run:-unknown}`"
+              echo "- Committed: `${committed_session:-unknown}` / `${committed_run:-unknown}`"
+              echo "- Unified: `${unified_session:-unknown}` / `${unified_run:-unknown}`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            return 1
+          }
+
           # EOD must finish and publish first so Trend Birth reads the newest deployed session.
           if selected eod; then
             dispatch_and_wait eod eod.yml "Unified EOD" 720 "inputs[scan_date]=$SESSION_DATE" "inputs[notify]=true"
           fi
 
           if selected gridview; then
-            dispatch_and_wait gridview trend-birth-gridview-telegram.yml "Trend Birth GridView" 80 "inputs[deliver]=true"
+            if wait_for_gridview_ready; then
+              dispatch_and_wait gridview trend-birth-gridview-telegram.yml "Trend Birth GridView" 80 "inputs[deliver]=true"
+            else
+              row "Trend Birth GridView" "-" "READINESS TIMEOUT" "not dispatched"
+              failed=1
+            fi
           fi
 
           if [ "$TARGETS" = "none" ]; then
