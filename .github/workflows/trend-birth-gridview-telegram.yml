@@ -95,7 +95,7 @@ jobs:
           git push origin HEAD:main
 
   stage_alerts:
-    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || inputs.deliver) && vars.UNIFIED_DELIVERY_ENDPOINT != '' && (vars.TREND_BIRTH_ALERT_MODE == 'legacy' || vars.TREND_BIRTH_ALERT_MODE == 'weekly-v2') }}
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || inputs.deliver) && vars.UNIFIED_DELIVERY_ENDPOINT != '' && (vars.TREND_BIRTH_ALERT_MODE == '' || vars.TREND_BIRTH_ALERT_MODE == 'legacy' || vars.TREND_BIRTH_ALERT_MODE == 'weekly-v2') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
@@ -118,5 +118,5 @@ jobs:
         run: |
           python -m stockscout_unified.trend_birth_alert_notification \
             --send \
-            --mode "${{ vars.TREND_BIRTH_ALERT_MODE }}" \
+            --mode "${{ vars.TREND_BIRTH_ALERT_MODE || 'legacy' }}" \
             --delivery-endpoint "${{ vars.UNIFIED_DELIVERY_ENDPOINT }}"

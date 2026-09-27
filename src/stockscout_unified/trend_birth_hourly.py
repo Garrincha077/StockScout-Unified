@@ -614,7 +614,7 @@ def main() -> int:
     parser.add_argument("--delivery-endpoint", default="")
     parser.add_argument("--send", action="store_true")
     parser.add_argument("--update-state", action="store_true")
-    parser.add_argument("--mode", choices=("shadow", "legacy", "weekly-v2"), default=os.getenv("TREND_BIRTH_ALERT_MODE", "shadow"))
+    parser.add_argument("--mode", choices=("shadow", "legacy", "weekly-v2"), default=os.getenv("TREND_BIRTH_ALERT_MODE", "legacy"))
     args = parser.parse_args()
 
     manifest, candidates = fetch_verified_universe(args.grid_url, mode=args.mode)

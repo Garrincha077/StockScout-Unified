@@ -310,6 +310,6 @@
 
 - Branch: `codex/weekly-birth-v2-unified`, based on `main`.
 - A committed publication ahead of the deployed Vercel pointer now defers the probe cleanly. Legacy GridView delivery stays available; stage-change delivery runs in an independent job.
-- `TREND_BIRTH_ALERT_MODE` selects `legacy` or `weekly-v2` for stage and hourly notifications. Unset means shadow: no stage-change or hourly messages. The v2 stage path sends at most one grouped Weekly Birth and one grouped Kell Daily message through the idempotent delivery endpoint. The v2 hourly path evaluates only the five-name Kell Daily shortlist.
+- `TREND_BIRTH_ALERT_MODE` selects `legacy` or `weekly-v2` for stage and hourly notifications. Unset preserves legacy delivery during the v2 data shadow period; explicit CLI `--mode shadow` suppresses stage/hourly sends for diagnostics. The v2 stage path sends at most one grouped Weekly Birth and one grouped Kell Daily message through the idempotent delivery endpoint. The v2 hourly path evaluates only the five-name Kell Daily shortlist.
 - Added a GitHub Actions watchdog with one allowlisted transient Required CI retry and a deduplicated issue for persistent failures. The scanner and broker paths remain unchanged.
 - Release gate: five distinct market sessions and at least 25 weekly chart reviews before setting the mode to `weekly-v2`; rollback is `TREND_BIRTH_ALERT_MODE=legacy` plus the Review Lab default-mode switch.

@@ -35,11 +35,11 @@ permissions:
 
 jobs:
   watch:
-    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.TREND_BIRTH_ALERT_MODE == 'legacy' || vars.TREND_BIRTH_ALERT_MODE == 'weekly-v2') }}
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.TREND_BIRTH_ALERT_MODE == '' || vars.TREND_BIRTH_ALERT_MODE == 'legacy' || vars.TREND_BIRTH_ALERT_MODE == 'weekly-v2') }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
-      ALERT_MODE: ${{ vars.TREND_BIRTH_ALERT_MODE || 'shadow' }}
+      ALERT_MODE: ${{ vars.TREND_BIRTH_ALERT_MODE || 'legacy' }}
     environment:
       name: production
     steps:
