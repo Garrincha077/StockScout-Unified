@@ -60,7 +60,7 @@ jobs:
 
       - name: Verify deployment and reserve one delivery per session
         id: reserve
-        if: github.event_name == 'schedule' || inputs.deliver
+        if: ${{ (github.event_name == 'schedule' || inputs.deliver) && vars.TREND_BIRTH_ALERT_MODE != 'weekly-v2' }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -94,16 +94,29 @@ jobs:
           git commit -m "chore: record GridView delivery outcome"
           git push origin HEAD:main
 
+  stage_alerts:
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || inputs.deliver) && vars.UNIFIED_DELIVERY_ENDPOINT != '' && (vars.TREND_BIRTH_ALERT_MODE == 'legacy' || vars.TREND_BIRTH_ALERT_MODE == 'weekly-v2') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install notification runtime
+        run: |
+          python -m pip install -r requirements.lock
+          python -m pip install -e .
       - name: Deliver Trend Birth stage-change alerts
-        if: ${{ (github.event_name == 'schedule' || inputs.deliver) && vars.UNIFIED_DELIVERY_ENDPOINT != '' }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python -m stockscout_unified.trend_birth_alert_notification \
             --send \
+            --mode "${{ vars.TREND_BIRTH_ALERT_MODE }}" \
             --delivery-endpoint "${{ vars.UNIFIED_DELIVERY_ENDPOINT }}"
-
-      - name: Explain disabled Trend Birth delivery ledger
-        if: ${{ (github.event_name == 'schedule' || inputs.deliver) && vars.UNIFIED_DELIVERY_ENDPOINT == '' }}
-        run: echo "Trend Birth alerts not sent because UNIFIED_DELIVERY_ENDPOINT is not configured."

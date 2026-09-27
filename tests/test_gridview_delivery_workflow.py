@@ -27,8 +27,14 @@ def test_gridview_workflow_delivers_trend_birth_alerts_through_unified_ledger():
     steps = workflow["jobs"]["send"]["steps"]
     dry = next(step for step in steps if step.get("name") == "Verify only (manual default)")
     assert "stockscout_unified.trend_birth_alert_notification" in dry.get("run", "")
-    deliver = next(step for step in steps if step.get("name") == "Deliver Trend Birth stage-change alerts")
+    assert "needs" not in workflow["jobs"]["stage_alerts"]
+    deliver = next(
+        step for step in workflow["jobs"]["stage_alerts"]["steps"]
+        if step.get("name") == "Deliver Trend Birth stage-change alerts"
+    )
     assert "--send" in deliver.get("run", "")
-    assert "UNIFIED_DELIVERY_ENDPOINT" in deliver.get("run", "")
+    assert "--mode" in deliver.get("run", "")
+    assert "UNIFIED_DELIVERY_ENDPOINT" in workflow["jobs"]["stage_alerts"]["if"]
+    assert "TREND_BIRTH_ALERT_MODE" in workflow["jobs"]["stage_alerts"]["if"]
     assert "TELEGRAM_BOT_TOKEN" in deliver.get("env", {})
     assert "TELEGRAM_CHAT_ID" in deliver.get("env", {})

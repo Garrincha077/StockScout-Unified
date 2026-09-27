@@ -1,5 +1,8 @@
+import json
 from datetime import date, timedelta
+from unittest.mock import patch
 
+from stockscout_unified import trend_birth_hourly as hourly
 from stockscout_unified.trend_birth_hourly import (
     CHECK_LABELS,
     apply_hysteresis,
@@ -120,6 +123,22 @@ def test_owner_watchlist_union_adds_tracked_only_and_marks_existing():
     assert by_ticker["AAA"]["trackedOnly"] is False
     assert by_ticker["CLOV"]["trackedWatchlist"] is True
     assert by_ticker["CLOV"]["trackedOnly"] is True
+
+
+def test_weekly_v2_hourly_universe_is_only_five_kell_daily_names():
+    snapshot = {
+        "shortlists": {"schemaVersion": "stockscout-shortlists-v2", "kellDaily": [{"ticker": f"K{i}"} for i in range(7)]},
+        "kellCandidates": [{"ticker": "LEGACY"}],
+    }
+    manifest = {"snapshotPath": "data/snapshots/example.json"}
+    with (
+        patch.object(hourly, "verify_publication", return_value=(manifest, {})),
+        patch.object(hourly, "fetch_bytes", return_value=json.dumps(snapshot).encode()),
+    ):
+        _, candidates = hourly.fetch_verified_universe("https://example.test", mode="weekly-v2")
+        assert [item["ticker"] for item in candidates] == [f"K{i}" for i in range(5)]
+        _, legacy = hourly.fetch_verified_universe("https://example.test", mode="legacy")
+        assert [item["ticker"] for item in legacy] == ["LEGACY"]
 
 
 def test_new_tracked_ticker_establishes_hourly_baseline_without_alert():

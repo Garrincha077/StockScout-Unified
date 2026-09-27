@@ -44,7 +44,7 @@ class DeliveryTests(unittest.TestCase):
                 "fetch_bytes",
                 side_effect=[json.dumps(manifest).encode(), json.dumps(newer).encode()],
             ),
-            self.assertRaisesRegex(ValueError, "not deployed"),
+            self.assertRaisesRegex(notification.PublicationPending, "not deployed"),
         ):
             notification.verify_publication()
 
@@ -211,6 +211,15 @@ class DeliveryTests(unittest.TestCase):
             self.assertEqual(0, notification.main())
             reserve.assert_not_called()
             send.assert_not_called()
+
+    def test_pending_deployment_defers_prepare_without_reservation(self):
+        with (
+            patch("sys.argv", ["gridview", "--prepare", "--reservation-id", "run-1"]),
+            patch.object(notification, "verify_publication", side_effect=notification.PublicationPending("pending")),
+            patch.object(notification, "reserve") as reserve,
+        ):
+            self.assertEqual(0, notification.main())
+            reserve.assert_not_called()
 
 
 if __name__ == "__main__":

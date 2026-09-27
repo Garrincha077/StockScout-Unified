@@ -1,0 +1,30 @@
+name: StockScout Workflow Watchdog
+
+on:
+  workflow_run:
+    workflows:
+      - Required CI
+      - StockScout Unified EOD
+      - Trend Birth GridView Telegram
+      - Trend Birth Hourly Watch
+    types: [completed]
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+jobs:
+  inspect:
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      WATCHDOG_RETRY_WORKFLOWS: Required CI
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+      - name: Classify run and record action
+        run: python scripts/workflow_watchdog.py
