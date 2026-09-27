@@ -64,3 +64,23 @@ def test_invalidated_is_grouped_in_one_series():
         "text": "⚪ KELL TREND BIRTH — INVALIDATED\n2 former READY/TRIGGER candidates\nView dashboard: " + url,
     }])
     assert list(build_series(data)) == ["trend-birth-invalidated"]
+
+
+def test_shadow_sends_nothing_and_v2_uses_two_grouped_series():
+    url = payload()["dashboardUrl"]
+    data = payload(
+        messages=[{"kind": "trigger", "ticker": "OLD", "text": "View dashboard: " + url}],
+        v2={
+            "schemaVersion": "stockscout-alerts-v2",
+            "baselineOnly": False,
+            "messages": [
+                {"kind": "weekly", "text": "Weekly shortlist\nView dashboard: " + url},
+                {"kind": "kell-daily", "text": "Kell Daily\nView dashboard: " + url},
+            ],
+        },
+    )
+    assert build_series(data, mode="shadow") == {}
+    assert set(build_series(data, mode="weekly-v2")) == {
+        "trend-birth-v2-weekly", "trend-birth-v2-kell-daily",
+    }
+    assert list(build_series(data, mode="legacy")) == ["trend-birth-trigger-OLD"]

@@ -32,6 +32,10 @@ DEFAULT_UNIFIED_URL = "https://garrincha077.github.io/StockScout-Unified/data/ma
 ID_PATTERN = r"[A-Za-z0-9][A-Za-z0-9_-]{0,119}--[a-f0-9]{64}"
 
 
+class PublicationPending(ValueError):
+    """The committed publication is valid but Vercel has not served it yet."""
+
+
 def snapshot_summary(payload: dict[str, Any]) -> dict[str, Any]:
     session = payload["source"]["sessionDate"]
     dt.date.fromisoformat(session)
@@ -78,7 +82,7 @@ def verify_publication(
     if manifest.get("schemaVersion") != "trend-birth-publication-v1":
         raise ValueError("Publication v1 is not deployed")
     if json.loads(fetch_bytes(expected_url)) != manifest:
-        raise ValueError("The latest committed publication has not deployed yet")
+        raise PublicationPending("The latest committed publication has not deployed yet")
     snapshot_id = manifest["snapshotId"]
     if not re.fullmatch(ID_PATTERN, snapshot_id):
         raise ValueError("Invalid snapshot ID")
@@ -227,7 +231,16 @@ def main() -> int:
     args = parser.parse_args()
     if args.send_reserved:
         return 0 if send_reserved(args.ledger_path, args.reservation_id) else 1
-    manifest, summary = verify_publication(args.grid_url)
+    try:
+        manifest, summary = verify_publication(args.grid_url)
+    except PublicationPending as error:
+        if not args.prepare:
+            raise
+        if os.environ.get("GITHUB_OUTPUT"):
+            with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+                output.write("prepared=false\ndeferred=true\n")
+        print(json.dumps({"deferred": True, "reason": str(error)}))
+        return 0
     if args.prepare:
         if sends_suppressed():
             raise ValueError("Notifications are disabled")

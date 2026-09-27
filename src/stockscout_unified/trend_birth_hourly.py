@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
@@ -542,10 +543,15 @@ def save_state(path: Path, state: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
-def fetch_verified_universe(grid_url: str = DEFAULT_GRID_URL) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def fetch_verified_universe(grid_url: str = DEFAULT_GRID_URL, mode: str = "legacy") -> tuple[dict[str, Any], list[dict[str, Any]]]:
     manifest, _summary = verify_publication(grid_url)
     snapshot = json.loads(fetch_bytes(grid_url.rstrip("/") + "/" + manifest["snapshotPath"]))
-    candidates = snapshot.get("kellCandidates") or []
+    if mode == "weekly-v2":
+        if (snapshot.get("shortlists") or {}).get("schemaVersion") != "stockscout-shortlists-v2":
+            raise ValueError("Weekly v2 Kell Daily shortlist is unavailable")
+        candidates = (snapshot["shortlists"].get("kellDaily") or [])[:5]
+    else:
+        candidates = snapshot.get("kellCandidates") or []
     if not isinstance(candidates, list):
         raise ValueError("Verified Trend Birth snapshot has no Kell candidate list")
     return manifest, [item for item in candidates if isinstance(item, dict) and item.get("ticker")]
@@ -608,11 +614,13 @@ def main() -> int:
     parser.add_argument("--delivery-endpoint", default="")
     parser.add_argument("--send", action="store_true")
     parser.add_argument("--update-state", action="store_true")
+    parser.add_argument("--mode", choices=("shadow", "legacy", "weekly-v2"), default=os.getenv("TREND_BIRTH_ALERT_MODE", "legacy"))
     args = parser.parse_args()
 
-    manifest, candidates = fetch_verified_universe(args.grid_url)
-    owner_watchlist = fetch_owner_watchlist(args.delivery_endpoint) if args.delivery_endpoint else []
-    candidates = merge_owner_watchlist(candidates, owner_watchlist)
+    manifest, candidates = fetch_verified_universe(args.grid_url, mode=args.mode)
+    owner_watchlist = fetch_owner_watchlist(args.delivery_endpoint) if args.mode == "legacy" and args.delivery_endpoint else []
+    if args.mode == "legacy":
+        candidates = merge_owner_watchlist(candidates, owner_watchlist)
     live = fetch_live_results(candidates)
     prior = load_state(args.state_path)
     next_state, events = process_results(candidates, live, prior)
@@ -632,7 +640,7 @@ def main() -> int:
         "series": list(series),
     }
 
-    if args.send and series:
+    if args.send and args.mode != "shadow" and series:
         if not args.delivery_endpoint:
             raise ValueError("--delivery-endpoint is required for sending")
         if not deliver_series(series, endpoint=args.delivery_endpoint):

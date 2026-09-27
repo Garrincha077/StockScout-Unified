@@ -35,9 +35,11 @@ permissions:
 
 jobs:
   watch:
-    if: github.ref == 'refs/heads/main'
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.TREND_BIRTH_ALERT_MODE == '' || vars.TREND_BIRTH_ALERT_MODE == 'legacy' || vars.TREND_BIRTH_ALERT_MODE == 'weekly-v2') }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    env:
+      ALERT_MODE: ${{ vars.TREND_BIRTH_ALERT_MODE || 'legacy' }}
     environment:
       name: production
     steps:
@@ -188,11 +190,12 @@ jobs:
         run: |
           python -m stockscout_unified.trend_birth_hourly \
             --update-state \
+            --mode "$ALERT_MODE" \
             --delivery-endpoint "${{ vars.UNIFIED_DELIVERY_ENDPOINT }}"
 
       - name: Dry-run hourly watcher
         if: github.event_name == 'workflow_dispatch' && !inputs.deliver
-        run: python -m stockscout_unified.trend_birth_hourly
+        run: python -m stockscout_unified.trend_birth_hourly --mode "$ALERT_MODE"
 
       - name: Run hourly watcher and deliver sparse alerts
         if: ${{ ((((github.event_name == 'schedule' || github.event_name == 'push') && steps.market.outputs.open == 'true' && steps.baseline.outputs.exists == 'true') || inputs.deliver)) && vars.UNIFIED_DELIVERY_ENDPOINT != '' }}
@@ -203,6 +206,7 @@ jobs:
           python -m stockscout_unified.trend_birth_hourly \
             --update-state \
             --send \
+            --mode "$ALERT_MODE" \
             --delivery-endpoint "${{ vars.UNIFIED_DELIVERY_ENDPOINT }}"
 
       - name: Save hourly stage state

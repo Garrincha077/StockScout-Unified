@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from typing import Any
 from urllib.parse import urlencode
 
 from stock_scout.notifications.telegram import _escape_md_v2, split_telegram_message
 from stockscout_unified.gridview_notification import (
     DEFAULT_GRID_URL,
+    PublicationPending,
     fetch_bytes,
     verify_publication,
 )
@@ -17,6 +19,7 @@ from stockscout_unified.notifications import deliver_series
 ALERT_PATH = "/data/trend-birth-alerts.json"
 ALERT_SCHEMA = "trend-birth-alerts-v1"
 ALLOWED_KINDS = {"ready", "trigger", "invalidated"}
+V2_KINDS = {"weekly", "kell-daily"}
 
 
 def _expected_dashboard_url(grid_url: str, snapshot_id: str) -> str:
@@ -57,6 +60,19 @@ def verify_alert_payload(grid_url: str = DEFAULT_GRID_URL) -> tuple[dict[str, An
                 raise ValueError("Trigger alerts require unique tickers")
             trigger_tickers.add(ticker)
 
+    v2 = payload.get("v2")
+    if v2 is not None:
+        if v2.get("schemaVersion") != "stockscout-alerts-v2" or not isinstance(v2.get("messages"), list):
+            raise ValueError("Invalid v2 Trend Birth alert payload")
+        if v2.get("baselineOnly") is True and v2["messages"]:
+            raise ValueError("Baseline-only v2 payload must not contain messages")
+        kinds: set[str] = set()
+        for message in v2["messages"]:
+            kind = str(message.get("kind") or "")
+            if kind not in V2_KINDS or kind in kinds or expected_dashboard not in str(message.get("text") or ""):
+                raise ValueError("Invalid or duplicate v2 Trend Birth alert message")
+            kinds.add(kind)
+
     return manifest, payload
 
 
@@ -72,15 +88,30 @@ def _render_markdown(text: str, dashboard_url: str) -> str:
     return escaped.replace(_escape_md_v2(marker), link)
 
 
-def build_series(payload: dict[str, Any]) -> dict[str, list[str]]:
+def build_series(payload: dict[str, Any], mode: str = "legacy") -> dict[str, list[str]]:
     """Convert the no-send Trend Birth payload to resumable Unified Telegram series."""
-    if payload.get("baselineOnly") is True:
+    if mode == "shadow":
         return {}
+    if mode == "weekly-v2":
+        selected = payload.get("v2") or {}
+        if selected.get("schemaVersion") != "stockscout-alerts-v2":
+            raise ValueError("Weekly v2 alerts are unavailable for this publication")
+        if selected.get("baselineOnly") is True:
+            return {}
+        messages = selected.get("messages") or []
+    elif mode == "legacy":
+        if payload.get("baselineOnly") is True:
+            return {}
+        messages = payload.get("messages") or []
+    else:
+        raise ValueError("Unknown Trend Birth alert mode")
     dashboard_url = str(payload.get("dashboardUrl") or "")
     series: dict[str, list[str]] = {}
-    for message in payload.get("messages") or []:
+    for message in messages:
         kind = str(message["kind"])
-        if kind == "trigger":
+        if mode == "weekly-v2":
+            key = f"trend-birth-v2-{kind}"
+        elif kind == "trigger":
             ticker = str(message["ticker"]).strip().upper()
             key = f"trend-birth-trigger-{ticker}"
         else:
@@ -100,10 +131,15 @@ def main() -> int:
     parser.add_argument("--grid-url", default=DEFAULT_GRID_URL)
     parser.add_argument("--delivery-endpoint", default="")
     parser.add_argument("--send", action="store_true")
+    parser.add_argument("--mode", choices=("shadow", "legacy", "weekly-v2"), default=os.getenv("TREND_BIRTH_ALERT_MODE", "legacy"))
     args = parser.parse_args()
 
-    manifest, payload = verify_alert_payload(args.grid_url)
-    series = build_series(payload)
+    try:
+        manifest, payload = verify_alert_payload(args.grid_url)
+    except PublicationPending as error:
+        print(json.dumps({"deferred": True, "reason": str(error)}))
+        return 0
+    series = build_series(payload, mode=args.mode)
     summary = {
         "sessionDate": manifest["sessionDate"],
         "baselineOnly": bool(payload.get("baselineOnly")),
@@ -112,6 +148,7 @@ def main() -> int:
         "invalidatedCount": int(payload.get("invalidatedCount") or 0),
         "series": list(series),
         "send": bool(args.send),
+        "mode": args.mode,
     }
     if not args.send:
         print(json.dumps({"dryRun": True, **summary}))
