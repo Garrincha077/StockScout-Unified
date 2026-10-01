@@ -243,6 +243,10 @@ jobs:
           restore-keys: |
             unified-next-market-${{ runner.os }}-
 
+      - name: Wait for selected session to be available from Next provider
+        working-directory: engines/next
+        run: python check_market_readiness.py --session-date "${{ needs.prepare.outputs.session_date }}"
+
       - name: Start Next scanner timing
         run: echo "NEXT_SCAN_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
 
