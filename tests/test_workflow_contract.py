@@ -159,3 +159,17 @@ def test_all_third_party_actions_are_pinned_to_full_commit_shas() -> None:
             if reference.startswith("./"):
                 continue
             assert re.fullmatch(r"[^@]+@[0-9a-f]{40}", reference), (path, reference)
+
+
+def test_next_has_provider_readiness_gate_before_expensive_scan() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    readiness = workflow.index("Wait for selected session to be available from Next provider")
+    timing = workflow.index("Start Next scanner timing")
+    scan = workflow.index("Run Next scanner (adjusted OHLCV)")
+    assert readiness < timing < scan
+    assert 'python check_market_readiness.py --session-date "${{ needs.prepare.outputs.session_date }}"' in workflow
+
+    gate = Path("engines/next/check_market_readiness.py").read_text(encoding="utf-8")
+    assert 'MIN_READY_FRACTION = 0.8' in gate
+    assert 'dates["SPY"] == session' in gate
+    assert 'RETRY_DELAYS = (30, 60, 120)' in gate
