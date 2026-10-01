@@ -24,7 +24,7 @@ dependencies = [
   "requests>=2.32,<3.0",
   "rich>=13.9,<15.0",
   "structlog>=24.4,<26.0",
-  "yfinance>=0.2.66,<0.3",
+  "yfinance>=0.2.66,<1.7",
 ]
 
 [project.optional-dependencies]
