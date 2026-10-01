@@ -313,3 +313,16 @@
 - `TREND_BIRTH_ALERT_MODE` selects `legacy` or `weekly-v2` for stage and hourly notifications. Unset preserves legacy delivery during the v2 data shadow period; explicit CLI `--mode shadow` suppresses stage/hourly sends for diagnostics. The v2 stage path sends at most one grouped Weekly Birth and one grouped Kell Daily message through the idempotent delivery endpoint. The v2 hourly path evaluates only the five-name Kell Daily shortlist.
 - Added a GitHub Actions watchdog with one allowlisted transient Required CI retry and a deduplicated issue for persistent failures. The scanner and broker paths remain unchanged.
 - Release gate: five distinct market sessions and at least 25 weekly chart reviews before setting the mode to `weekly-v2`; rollback is `TREND_BIRTH_ALERT_MODE=legacy` plus the Review Lab default-mode switch.
+
+
+## 2026-10-01 — Next provider readiness gate
+
+- Added a bounded fail-fast Yahoo readiness probe before the expensive Next full-universe scan.
+  It requires SPY plus at least 80% of a ten-symbol liquid sample to have the exact immutable
+  NYSE session already selected by the Unified orchestrator, with 30/60/120-second retries.
+- The gate never changes the selected session, scanner universe, adjusted-OHLCV rules, scoring,
+  ranking, detectors, Ryan capture, alerts or published data. Probe data is not passed to the
+  scanner. If Yahoo is still lagging, the Next job stops before the full scan and can be retried
+  later for the same session.
+- Added a workflow contract regression test requiring the readiness gate to run before Next
+  scanner timing and the full scanner.
