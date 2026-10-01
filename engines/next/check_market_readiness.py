@@ -28,9 +28,10 @@ def _last_date(raw: pd.DataFrame, ticker: str) -> date | None:
         return None
     if isinstance(frame.columns, pd.MultiIndex):
         frame = frame.droplevel(0, axis=1)
-    required = [c for c in ("Open", "High", "Low", "Close", "Volume") if c in frame.columns]
-    if required:
-        frame = frame.dropna(subset=required, how="any")
+    required = ("Open", "High", "Low", "Close", "Volume")
+    if any(column not in frame.columns for column in required):
+        return None
+    frame = frame.dropna(subset=list(required), how="any")
     if frame.empty:
         return None
     return pd.Timestamp(frame.index.max()).date()
@@ -63,7 +64,11 @@ def main() -> int:
     session = args.session_date
 
     for attempt in range(len(RETRY_DELAYS) + 1):
-        raw = fetch(session)
+        try:
+            raw = fetch(session)
+        except Exception as exc:
+            print(f"Next provider readiness download failed: {type(exc).__name__}: {exc}")
+            raw = pd.DataFrame()
         ok, dates = readiness(raw, session)
         ready = sum(value == session for value in dates.values())
         print(f"Next provider readiness: session={session} ready={ready}/{len(SAMPLE)} SPY={dates['SPY']}")
