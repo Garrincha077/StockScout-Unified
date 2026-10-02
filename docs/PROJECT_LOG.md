@@ -343,7 +343,19 @@
   NYSE session, including before the current session closes.
 - Verification: local root suite 240 passed / 2 documented existing skips;
   targeted Next suite 19 passed; Ruff, source pins and protected Ryan hashes pass.
-  Remote CI/live results remain to be recorded after the review branch runs.
+  PR #101 Required CI and the live 100-stock Next smoke passed; merged as
+  `650a747acd2736a3765a35de5b2f555fbb93584b`. Main Required CI passed on recovery
+  commit `a1e5e47b209cd3f3357d1c29b847a21e5dc96e4b`.
+- Full no-send EOD recovery run `36981190571` passed for 1 October. Bottom
+  reused its verified same-session checkpoint (2,033 charts); Next processed
+  all 3,765 tickers with zero failed tickers. Assembly, Pages and deployment
+  smoke passed. A separate live hash/identity check verified healthy activation
+  `2026-10-01-eod-36981190571-1` across all three modes.
+- Existing no-send Trend Birth publisher run `36982675617` built aligned
+  Review/Kell data and publication commit `90836d3584683f9bb94e22ef84108034efdcc213`
+  deployed to Vercel. Read-only live verification passed for the exact Unified
+  run/session, committed pointer, immutable Review archive hash, frontend loader,
+  all 81 Review charts and public Kell identity (1,976 candidates).
 - Scoring formulas and ranking definitions unchanged. A recovered complete EOD
   bar may let a previously excluded ticker be evaluated under existing rules.
   Continued provider lag/rate limits still fail closed after bounded attempts.

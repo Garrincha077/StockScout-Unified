@@ -68,8 +68,31 @@ provider outage or rate limit can still exhaust the bounded retries.
 - Ruff, protected source pins and the frozen Ryan baseline passed.
 - Changed workflow YAML parsed successfully; checkpoint/handoff workflow tests
   passed. Successful Bottom handoffs can be rebound to the new assembly attempt.
-- Required CI and the branch's live smoke are the remote review gates. Their
-  results must be checked before claiming live recovery or promoting the patch.
+- [PR #101](https://github.com/Garrincha077/StockScout-Unified/pull/101)
+  passed [Required CI](https://github.com/Garrincha077/StockScout-Unified/actions/runs/36980717318)
+  and was merged as `650a747acd2736a3765a35de5b2f555fbb93584b`.
+- The [live 100-stock Next smoke](https://github.com/Garrincha077/StockScout-Unified/actions/runs/36980714355)
+  processed 100/100 tickers for 1 October with zero provider errors. The liquid
+  probe was already complete (10/10; zero exact-day repairs), so the recovery
+  cases are validated by the missing/partial-bar regression fixtures.
+- A new [full EOD run](https://github.com/Garrincha077/StockScout-Unified/actions/runs/36981190571)
+  on main completed successfully with `notify: false`. Bottom reused its
+  validated 1 October checkpoint and 2,033 charts; Next processed all 3,765
+  tickers with zero failed tickers. Assembly, Pages deployment and deployment
+  smoke passed. Main [Required CI](https://github.com/Garrincha077/StockScout-Unified/actions/runs/36981179629)
+  also passed.
+- An independent read-only `verify_remote_activation.py` check confirmed active
+  run `2026-10-01-eod-36981190571-1`, healthy status, and all three mode-manifest
+  identities and SHA-256 hashes on the public Pages deployment. The manual
+  `verify-notify` job's notification steps were intentionally skipped.
+- The existing no-send Trend Birth refresh dispatched
+  [publisher run 36982675617](https://github.com/Garrincha077/StockScout-Trend-Birth/actions/runs/36982675617).
+  Its build/tests and source-identity gates passed and publication commit
+  `90836d3584683f9bb94e22ef84108034efdcc213` deployed successfully to Vercel.
+  A separate read-only publication check verified the committed/deployed Review
+  pointer, immutable archive hash, frontend snapshot loader and all 81 candidate
+  charts against the exact active Unified run. Public Kell data also identified
+  the same run/session, with 1,976 candidates. No manual notification was sent.
 - A retry executes the original run's SHA. It cannot load newly merged scanner
   code. Recovery that needs the new code must start a new main EOD run; its
   same-session Bottom checkpoint avoids repeating a completed Bottom scan when
@@ -82,7 +105,7 @@ provider outage or rate limit can still exhaust the bounded retries.
 | 1 | Separate publication alignment from market freshness. | Show expected completed NYSE session, active Unified session, Review/Kell session and deployment identity; a stale upstream remains visibly stale even when a refresh command succeeds. |
 | 2 | Trigger the sole Review publisher after verified Unified activation, retaining a low-frequency schedule as recovery. | Request the exact source run/session; verify the Vercel pointer and immutable archive match before notifying. Repeated requests remain idempotent. |
 | 3 | Make Morning Recovery actively request a Trend Birth refresh after EOD. | A scoped cross-repository credential dispatches the existing publisher; recovery then waits for its exact deployment. Waiting for a periodic refresh alone must not consume the current 15-minute timeout. |
-| 4 | Reconcile runtime locks with the editable package's constraints. | The installed yfinance version matches a deliberate lock. Current runner logs install yfinance 1.7.0 and then downgrade to 0.2.66 during editable installation, weakening reproducibility. Treat upgrading the provider as a separate compatibility change. |
+| 4 | Reconcile the Next engine lock with the editable package's constraints. | The installed yfinance version matches a deliberate lock. The Next engine lock installs yfinance 1.7.0 and editable Unified installation then downgrades to 0.2.66; the root lock already pins 0.2.66. Treat upgrading the provider as a separate compatibility change. |
 
 Keep the existing daily tracked-watchlist enrichment, immutable archives and
 delivery reservations. The proposals above concern orchestration and visibility;
