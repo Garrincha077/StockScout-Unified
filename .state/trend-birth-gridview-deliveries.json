@@ -74,12 +74,13 @@
       "messageId": 636
     },
     "2026-10-01": {
-      "status": "reserved",
+      "status": "sent",
       "reservationId": "36999884848-1",
       "snapshotId": "2026-10-01-eod-36981190571-1--a3e1c3c9fb1c9cd26713eb8e5c52b36fe0c532155b7c4c95fb65206e8ae3269c",
       "runId": "2026-10-01-eod-36981190571-1",
       "gridUrl": "https://stockscout-trend-birth-review-lab.vercel.app/?snapshot=2026-10-01-eod-36981190571-1--a3e1c3c9fb1c9cd26713eb8e5c52b36fe0c532155b7c4c95fb65206e8ae3269c",
-      "message": "📊 *Trend Birth GridView*  `2026\\-10\\-01`\nKandidati: *81*\nKell 3x RVOL: *1* \\| Gap Up: *5* \\| Multi hit: *0*\n[Open GridView](https://stockscout\\-trend\\-birth\\-review\\-lab\\.vercel\\.app/?snapshot\\=2026\\-10\\-01\\-eod\\-36981190571\\-1\\-\\-a3e1c3c9fb1c9cd26713eb8e5c52b36fe0c532155b7c4c95fb65206e8ae3269c)"
+      "message": "📊 *Trend Birth GridView*  `2026\\-10\\-01`\nKandidati: *81*\nKell 3x RVOL: *1* \\| Gap Up: *5* \\| Multi hit: *0*\n[Open GridView](https://stockscout\\-trend\\-birth\\-review\\-lab\\.vercel\\.app/?snapshot\\=2026\\-10\\-01\\-eod\\-36981190571\\-1\\-\\-a3e1c3c9fb1c9cd26713eb8e5c52b36fe0c532155b7c4c95fb65206e8ae3269c)",
+      "messageId": 674
     }
   }
 }
