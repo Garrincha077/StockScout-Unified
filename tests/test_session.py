@@ -3,7 +3,15 @@ from __future__ import annotations
 import json
 from datetime import UTC, date, datetime
 
-from stockscout_eod.session import decide_session, write_github_outputs
+from stockscout_eod.session import decide_session, latest_completed_session, write_github_outputs
+
+
+def test_latest_completed_session_observes_close_holidays_and_early_close() -> None:
+    assert latest_completed_session(datetime(2026, 10, 2, 8, tzinfo=UTC)) == "2026-10-01"
+    assert latest_completed_session(datetime(2026, 10, 2, 20, tzinfo=UTC)) == "2026-10-02"
+    assert latest_completed_session(datetime(2026, 12, 25, 21, tzinfo=UTC)) == "2026-12-24"
+    assert latest_completed_session(datetime(2026, 11, 27, 17, 59, tzinfo=UTC)) == "2026-11-25"
+    assert latest_completed_session(datetime(2026, 11, 27, 18, tzinfo=UTC)) == "2026-11-27"
 
 
 def test_guard_waits_for_close_then_allows_completed_session() -> None:

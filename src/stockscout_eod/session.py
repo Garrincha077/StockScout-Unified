@@ -14,6 +14,18 @@ import pandas_market_calendars as mcal
 NYSE = mcal.get_calendar("NYSE")
 
 
+def latest_completed_session(now_utc: datetime | None = None) -> str:
+    """Return the last actual NYSE close, including holidays and early closes."""
+    now = now_utc or datetime.now(tz=UTC)
+    now = now.replace(tzinfo=UTC) if now.tzinfo is None else now.astimezone(UTC)
+    today = now.astimezone(ZoneInfo("America/New_York")).date()
+    schedule = NYSE.schedule(start_date=today - timedelta(days=14), end_date=today)
+    completed = schedule.loc[schedule["market_close"] <= now]
+    if completed.empty:
+        raise ValueError("NYSE calendar has no completed session in the lookback")
+    return completed.index[-1].date().isoformat()
+
+
 @dataclass(frozen=True)
 class GuardDecision:
     should_run: bool

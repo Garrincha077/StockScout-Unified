@@ -19,10 +19,13 @@ def fetch(path: str) -> bytes:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-id", required=True)
+    parser.add_argument("--session-date", default=None)
     args = parser.parse_args()
     unified = json.loads(fetch(f"manifest.json?run={args.run_id}"))
     if unified.get("runId") != args.run_id or unified.get("status") != "healthy":
         raise SystemExit(f"Pages activation mismatch: expected {args.run_id}, got {unified.get('runId')}")
+    if args.session_date and unified.get("sessionDate") != args.session_date:
+        raise SystemExit(f"Pages session mismatch: expected {args.session_date}, got {unified.get('sessionDate')}")
     for mode in ("bottom-fishing", "next", "ryan-original"):
         pointer = unified["modes"][mode]
         payload = fetch(f"{pointer['manifestPath']}?run={args.run_id}")
@@ -31,6 +34,8 @@ def main() -> None:
         manifest = json.loads(payload)
         if manifest.get("runId") != args.run_id or manifest.get("mode") != mode:
             raise SystemExit(f"remote manifest identity mismatch: {mode}")
+        if args.session_date and manifest.get("sessionDate") != args.session_date:
+            raise SystemExit(f"remote manifest session mismatch: {mode}")
     print(f"Verified active Pages run {args.run_id} across all three modes")
 
 

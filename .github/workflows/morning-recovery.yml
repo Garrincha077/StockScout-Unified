@@ -13,6 +13,10 @@ on:
         required: false
         default: ""
         type: string
+      notify:
+        description: "Send after verified recovery; manual default is disabled"
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths:
@@ -29,9 +33,12 @@ concurrency:
 jobs:
   recover:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
 
       - name: Resolve requested recovery targets
         id: targets
@@ -41,19 +48,29 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             targets="${{ inputs.targets }}"
             session_date="${{ inputs.session_date }}"
+            notify="${{ inputs.notify }}"
           else
             targets="$(sed -n 's/^targets=//p' .github/recovery/stockscout-morning.trigger | tail -n 1)"
             session_date="$(sed -n 's/^session_date=//p' .github/recovery/stockscout-morning.trigger | tail -n 1)"
+            # Preserve the existing morning watchdog's delivery policy; explicit
+            # notify=false makes push-triggered validation read-only.
+            notify="$(sed -n 's/^notify=//p' .github/recovery/stockscout-morning.trigger | tail -n 1)"
+            notify="${notify:-true}"
           fi
           targets="${targets// /}"
           session_date="${session_date// /}"
           if [ -z "$targets" ]; then targets="none"; fi
+          if [[ "$notify" != "true" && "$notify" != "false" ]]; then
+            echo "::error::notify must be true or false"
+            exit 1
+          fi
           if [[ "$targets" == *"eod"* || "$targets" == *"gridview"* ]] && [[ ! "$session_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
             echo "::error::EOD/GridView recovery requires session_date=YYYY-MM-DD"
             exit 1
           fi
           echo "targets=$targets" >> "$GITHUB_OUTPUT"
           echo "session_date=$session_date" >> "$GITHUB_OUTPUT"
+          echo "notify=$notify" >> "$GITHUB_OUTPUT"
           {
             echo "## StockScout Morning Recovery"
             echo
@@ -71,6 +88,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TARGETS: ${{ steps.targets.outputs.targets }}
           SESSION_DATE: ${{ steps.targets.outputs.session_date }}
+          NOTIFY: ${{ steps.targets.outputs.notify }}
+          TREND_BIRTH_REFRESH_TOKEN: ${{ secrets.TREND_BIRTH_REFRESH_TOKEN }}
         run: |
           set -uo pipefail
           failed=0
@@ -137,6 +156,7 @@ jobs:
             fi
 
             public="n/a"
+            result="SUCCESS"
             if [ "$key" = "eod" ]; then
               public="pending verification"
               for _ in $(seq 1 40); do
@@ -144,16 +164,42 @@ jobs:
                   live_session="$(jq -r '.marketSession.date // .sessionDate // .date // empty' /tmp/stockscout-manifest.json)"
                   live_status="$(jq -r '.status // empty' /tmp/stockscout-manifest.json)"
                   if [ "$live_session" = "$SESSION_DATE" ] && [ "$live_status" = "healthy" ]; then
-                    public="manifest verified for $SESSION_DATE"
-                    break
+                    live_run="$(jq -r '.runId // empty' /tmp/stockscout-manifest.json)"
+                    if python scripts/verify_remote_activation.py --run-id "$live_run" --session-date "$SESSION_DATE"; then
+                      public="manifest verified for $SESSION_DATE ($live_run)"
+                      break
+                    fi
                   fi
                 fi
                 sleep 6
               done
-              [ "$public" = "manifest verified for $SESSION_DATE" ] || failed=1
+              if [[ "$public" != "manifest verified for $SESSION_DATE ("* ]]; then
+                failed=1
+                result="ACTIVATION VERIFICATION FAILED"
+              fi
             fi
 
-            row "$label" "[run]($run_url)" "SUCCESS" "$public"
+            row "$label" "[run]($run_url)" "$result" "$public"
+          }
+
+          request_gridview_refresh() {
+            # GITHUB_TOKEN is scoped to this repository. Without a dedicated
+            # token, the Trend Birth monitor detects activation every 15 minutes.
+            if [ -z "$TREND_BIRTH_REFRESH_TOKEN" ]; then
+              echo "Trend Birth's activation monitor will pick up the verified session; waiting for exact publication." >> "$GITHUB_STEP_SUMMARY"
+              return 0
+            fi
+            if ! curl -fsS --max-time 30 -H 'Cache-Control: no-cache' \
+              "https://garrincha077.github.io/StockScout-Unified/data/manifest.json?recovery=$(date +%s)" -o /tmp/unified-refresh-source.json; then
+              return 1
+            fi
+            source_run="$(jq -r '.runId // empty' /tmp/unified-refresh-source.json)"
+            if ! python scripts/verify_remote_activation.py --run-id "$source_run" --session-date "$SESSION_DATE"; then
+              return 1
+            fi
+            GH_TOKEN="$TREND_BIRTH_REFRESH_TOKEN" gh api --method POST \
+              repos/Garrincha077/StockScout-Trend-Birth/actions/workflows/refresh-trend-birth-review-lab.yml/dispatches \
+              -f ref=main -f "inputs[session_date]=$SESSION_DATE" -f "inputs[source_run_id]=$source_run" >/dev/null
           }
 
           wait_for_gridview_ready() {
@@ -161,10 +207,11 @@ jobs:
             committed_url="https://raw.githubusercontent.com/Garrincha077/StockScout-Trend-Birth/feature/unified-review-grid-lab/lab/data/publication.json"
             unified_url="https://garrincha077.github.io/StockScout-Unified/data/manifest.json"
 
-            for _ in $(seq 1 90); do
-              if curl -fsS -H 'Cache-Control: no-cache' "$deployed_url?recovery=$(date +%s)" -o /tmp/grid-deployed.json \
-                && curl -fsS -H 'Cache-Control: no-cache' "$committed_url?recovery=$(date +%s)" -o /tmp/grid-committed.json \
-                && curl -fsS -H 'Cache-Control: no-cache' "$unified_url?recovery=$(date +%s)" -o /tmp/unified-live.json; then
+            deadline="$(($(date +%s) + 2700))"
+            while [ "$(date +%s)" -lt "$deadline" ]; do
+              if curl -fsS --max-time 30 -H 'Cache-Control: no-cache' "$deployed_url?recovery=$(date +%s)" -o /tmp/grid-deployed.json \
+                && curl -fsS --max-time 30 -H 'Cache-Control: no-cache' "$committed_url?recovery=$(date +%s)" -o /tmp/grid-committed.json \
+                && curl -fsS --max-time 30 -H 'Cache-Control: no-cache' "$unified_url?recovery=$(date +%s)" -o /tmp/unified-live.json; then
                 deployed_session="$(jq -r '.sessionDate // empty' /tmp/grid-deployed.json)"
                 committed_session="$(jq -r '.sessionDate // empty' /tmp/grid-committed.json)"
                 unified_session="$(jq -r '.sessionDate // .marketSession.date // empty' /tmp/unified-live.json)"
@@ -173,7 +220,7 @@ jobs:
                 unified_run="$(jq -r '.runId // empty' /tmp/unified-live.json)"
                 unified_status="$(jq -r '.status // empty' /tmp/unified-live.json)"
 
-                if cmp -s /tmp/grid-deployed.json /tmp/grid-committed.json \
+                if jq -e --slurp '.[0] == .[1]' /tmp/grid-deployed.json /tmp/grid-committed.json >/dev/null \
                   && [ "$deployed_session" = "$SESSION_DATE" ] \
                   && [ "$committed_session" = "$SESSION_DATE" ] \
                   && [ "$unified_session" = "$SESSION_DATE" ] \
@@ -187,7 +234,7 @@ jobs:
               sleep 10
             done
 
-            echo "::error::GridView deployment did not converge to Unified session $SESSION_DATE within 15 minutes"
+            echo "::error::GridView deployment did not converge to Unified session $SESSION_DATE within the recovery window"
             {
               echo
               echo "### GridView readiness timeout"
@@ -202,12 +249,12 @@ jobs:
 
           # EOD must finish and publish first so Trend Birth reads the newest deployed session.
           if selected eod; then
-            dispatch_and_wait eod eod.yml "Unified EOD" 720 "inputs[scan_date]=$SESSION_DATE" "inputs[notify]=true"
+            dispatch_and_wait eod eod.yml "Unified EOD" 720 "inputs[scan_date]=$SESSION_DATE" "inputs[notify]=$NOTIFY"
           fi
 
           if selected gridview; then
-            if wait_for_gridview_ready; then
-              dispatch_and_wait gridview trend-birth-gridview-telegram.yml "Trend Birth GridView" 80 "inputs[deliver]=true"
+            if [ "$failed" -eq 0 ] && request_gridview_refresh && wait_for_gridview_ready; then
+              dispatch_and_wait gridview trend-birth-gridview-telegram.yml "Trend Birth GridView" 80 "inputs[deliver]=$NOTIFY"
             else
               row "Trend Birth GridView" "-" "READINESS TIMEOUT" "not dispatched"
               failed=1
