@@ -371,3 +371,12 @@
 - Affected: NYSE session helper, GridView publication verifier, remote activation checker, Morning Recovery workflow and regression tests. No detector, signal, score, ranking, frozen Ryan baseline, market-data price basis or delivery ledger state changed.
 - Local tests: 244 passed / 2 documented existing skips; Ruff and changed workflow shell/YAML checks passed. The independent Trend Birth controller/watchdog suite covers no-op, stale upstream, duplicate dispatch, publisher/deployment failure and calendar cases. Remote CI and live dry-run results remain to be recorded.
 - Timing caveat: the monitor runs every 15 minutes in the daytime/recovery window; GitHub queueing plus publisher/deployment time may consume the bounded recovery window. Persistent provider, GitHub or hosting outages remain visible failures.
+
+### Activated verification
+
+- Unified PR #102 merged as `dd8454edd907c546c0d87cbcae2d32a7df42328c`; final review CI run `36987955750` passed on `05abab01c13839c6b36f46ddf05fbe9aa030560d`.
+- Companion Trend Birth PR #40 merged as `c5833a06738175b01cc58cba0bf663fd5118e6bb`. Final review run `36987780207` and main production run `36988408129` passed all 16 contracts and verified fresh public run `2026-10-01-eod-36981190571-1`, with `dispatched=false` (no unnecessary rebuild).
+- No-send Morning Recovery run `36988467203` passed: exact Pages activation, requested session and all three mode hashes verified; GridView verification run `36988482782` succeeded. Reservation/send steps and the stage-delivery job were skipped. Both GridView and Trend Birth alert dry-run verification passed.
+- The no-send validation marker is reset to targets=none; the morning watchdog's existing notify=true policy is retained for its future explicit recovery requests. No manual message was sent.
+- Vercel preview `dpl_Hc9JhEahtEXP4sTJmDVevMJBZQqE` fails with `NOW_SANDBOX_WORKER_ROOTDIR_NOT_EXIST`: the scheduler-only topic branch has no lab directory. This is an infrastructure preview limitation, not a production publication failure. The application remains on its existing feature branch; public identity/archive/chart verification passed.
+- The controller's changed-source dispatch/wait cases passed regressions; current production exercised the aligned no-op path. The 15-minute monitoring bridge is active without requiring a new cross-repository credential.

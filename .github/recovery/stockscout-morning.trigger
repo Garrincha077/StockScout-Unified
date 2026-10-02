@@ -1,7 +1,7 @@
 # Managed by the ChatGPT morning watchdog.
-# Explicit no-send verification of coordinated recovery.
-targets=gridview
+# Verification completed; future recovery requests choose their targets/session.
+targets=none
 session_date=2026-10-01
-notify=false
-reason=verify-linked-trend-birth-recovery
-requested_at=2026-10-02T09:12:39.848Z
+notify=true
+reason=coordinated-recovery-verified-noop
+requested_at=2026-10-02T09:22:50.934Z

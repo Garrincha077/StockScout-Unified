@@ -98,15 +98,23 @@ provider outage or rate limit can still exhaust the bounded retries.
   same-session Bottom checkpoint avoids repeating a completed Bottom scan when
   cache validation permits reuse.
 
-## Proposed Trend Birth improvements
+## Trend Birth follow-up status (activated 2 October)
 
 | Priority | Change | Acceptance criterion |
 | --- | --- | --- |
-| 1 | Separate publication alignment from market freshness. | Show expected completed NYSE session, active Unified session, Review/Kell session and deployment identity; a stale upstream remains visibly stale even when a refresh command succeeds. |
-| 2 | Trigger the sole Review publisher after verified Unified activation, retaining a low-frequency schedule as recovery. | Request the exact source run/session; verify the Vercel pointer and immutable archive match before notifying. Repeated requests remain idempotent. |
-| 3 | Make Morning Recovery actively request a Trend Birth refresh after EOD. | A scoped cross-repository credential dispatches the existing publisher; recovery then waits for its exact deployment. Waiting for a periodic refresh alone must not consume the current 15-minute timeout. |
+| 1 | Separate publication alignment from market freshness. | Implemented in GridView/stage verification and the Trend Birth monitor: the NYSE calendar determines the last actual close, and aligned but stale data fails. A dashboard freshness badge remains an optional UI follow-up. |
+| 2 | Refresh the sole publisher after verified Unified activation. | Activated a 15-minute pointer monitor during 01:00–19:59 Europe/Zagreb, outside the normal evening EOD window. It skips aligned data, reuses in-flight publishing and verifies committed/deployed identity. Low-frequency slots and daily tracked-watchlist enrichment remain. Direct authenticated activation events can supplement this bridge later. |
+| 3 | Coordinate Morning Recovery with Trend Birth. | Implemented exact run/session/mode-hash verification and a 45-minute real-time convergence window. An optional scoped TREND_BIRTH_REFRESH_TOKEN enables immediate dispatch; otherwise the activated monitor picks up the source. Manual no-send end-to-end recovery passed. |
 | 4 | Reconcile the Next engine lock with the editable package's constraints. | The installed yfinance version matches a deliberate lock. The Next engine lock installs yfinance 1.7.0 and editable Unified installation then downgrades to 0.2.66; the root lock already pins 0.2.66. Treat upgrading the provider as a separate compatibility change. |
 
 Keep the existing daily tracked-watchlist enrichment, immutable archives and
 delivery reservations. The proposals above concern orchestration and visibility;
 they do not imply changing Trend Birth's signals or enabling its weekly-v2 mode.
+
+## Follow-up validation
+
+- Unified PR #102: Required CI run 36987955750 passed; merged as dd8454edd907c546c0d87cbcae2d32a7df42328c.
+- Trend Birth PR #40: review run 36987780207 and main run 36988408129 passed all 16 controller/watchdog tests and live freshness checks without rebuilding aligned data.
+- Morning Recovery 36988467203 and GridView verification 36988482782 passed on production code, with notifications disabled and all reserve/send steps skipped.
+- Archive/chart verification using the new freshness gate passed for the exact current 1 October run. Changed-source dispatch paths are regression-tested; the live controller exercised its no-op path because data was already aligned.
+- Vercel's optional scheduler-branch preview reports missing lab Root Directory; production lives on the separate app branch and was independently verified.
