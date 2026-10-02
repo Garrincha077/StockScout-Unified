@@ -22,6 +22,8 @@ from typing import Any, Dict, List
 
 import yfinance as yf
 
+from market_session_repair import download_session_bars, replace_session_bar, session_bar
+
 from .fast_batch_processor import FastOptimizedBatchProcessor
 
 logger = logging.getLogger(__name__)
@@ -126,6 +128,28 @@ class ResumableFastOptimizedBatchProcessor(FastOptimizedBatchProcessor):
         if error_class == "timeout":
             self.provider_timeout_count += 1
 
+    def _has_expected_session(self, frame) -> bool:
+        if not super()._has_expected_session(frame):
+            return False
+        return self.expected_session is None or not session_bar(frame, self.expected_session).empty
+
+    def _repair_terminal_bars(self, frames: dict) -> dict:
+        if self.expected_session is None:
+            return frames
+        pending = [ticker for ticker, frame in frames.items() if not self._has_expected_session(frame)]
+        if not pending:
+            return frames
+        try:
+            bars = download_session_bars(pending, self.expected_session)
+        except Exception as exc:
+            self._record_provider_error(self._classify_provider_error(exc))
+            logger.warning("Next exact-session repair failed for %d symbols: %s", len(pending), exc)
+            return frames
+        for ticker, bar in bars.items():
+            frames[ticker] = replace_session_bar(frames[ticker], bar, self.expected_session)
+        logger.info("Next exact-session repair: session=%s recovered=%d/%d", self.expected_session, len(bars), len(pending))
+        return frames
+
     def _download_chunk(self, chunk: List[str], threads: bool = True) -> Dict[str, Any]:
         """Fetch one OHLCV chunk with bounded retries around the existing 20s timeout.
 
@@ -156,7 +180,7 @@ class ResumableFastOptimizedBatchProcessor(FastOptimizedBatchProcessor):
                     frame = self._extract_ticker_frame(raw, ticker, len(chunk))
                     if not frame.empty:
                         out[ticker] = frame
-                return out
+                return self._repair_terminal_bars(out)
             except Exception as exc:
                 error_class = self._classify_provider_error(exc)
                 self._record_provider_error(error_class)

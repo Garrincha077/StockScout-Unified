@@ -1,6 +1,13 @@
 name: StockScout Unified EOD Smoke
 
 on:
+  push:
+    branches: [codex/eod-provider-recovery-20261002]
+    paths:
+      - "engines/next/check_market_readiness.py"
+      - "engines/next/market_session_repair.py"
+      - "engines/next/src/screening/resumable_fast_batch_processor.py"
+      - ".github/workflows/eod-smoke.yml"
   workflow_dispatch:
     inputs:
       scan_date:
@@ -50,6 +57,19 @@ jobs:
         env:
           REQUESTED_DATE: ${{ inputs.scan_date }}
         run: |
+          if [ -z "$REQUESTED_DATE" ]; then
+            REQUESTED_DATE="$(python - <<'PY'
+          from datetime import UTC, datetime, timedelta
+          from stockscout_eod.session import NYSE
+          now = datetime.now(UTC)
+          schedule = NYSE.schedule(start_date=(now - timedelta(days=14)).date(), end_date=now.date())
+          completed = schedule.loc[schedule["market_close"] <= now]
+          if completed.empty:
+              raise SystemExit("No completed NYSE session in smoke lookback")
+          print(completed.index[-1].date().isoformat())
+          PY
+            )"
+          fi
           args=(guard --force --active-manifest https://garrincha077.github.io/StockScout-Unified/data/manifest.json --github-output "$GITHUB_OUTPUT")
           if [ -n "$REQUESTED_DATE" ]; then args+=(--requested-date "$REQUESTED_DATE"); fi
           python -m stockscout_eod.cli "${args[@]}"
@@ -131,7 +151,7 @@ jobs:
 
   next-smoke:
     needs: prepare
-    if: ${{ inputs.scanner == 'both' || inputs.scanner == 'next' }}
+    if: ${{ github.event_name == 'push' || inputs.scanner == 'both' || inputs.scanner == 'next' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -154,6 +174,14 @@ jobs:
           python -m pip install --require-hashes -r engines/next/requirements.lock
           python -m pip install -e .
 
+      - name: Run Next repair regressions
+        working-directory: engines/next
+        run: python -m pytest -q tests/test_resumable_fast_batch_processor.py tests/test_eod_session_pinning.py
+
+      - name: Wait for selected session to be available from Next provider
+        working-directory: engines/next
+        run: python check_market_readiness.py --session-date "${{ needs.prepare.outputs.session_date }}"
+
       - name: Start Next smoke timing
         run: echo "NEXT_SMOKE_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
 
@@ -162,7 +190,7 @@ jobs:
         env:
           FORCE_FULL_REFRESH: "false"
           STOCKSCOUT_EXPECTED_SESSION: ${{ needs.prepare.outputs.session_date }}
-          STOCKSCOUT_PROGRESS_SOURCE_HASH: ${{ hashFiles('engines/next/run_resumable_fast_scan.py', 'engines/next/run_fast_scan.py', 'engines/next/run_optimized_scan.py', 'engines/next/src/**/*.py', 'engines/next/requirements.lock') }}
+          STOCKSCOUT_PROGRESS_SOURCE_HASH: ${{ hashFiles('engines/next/run_resumable_fast_scan.py', 'engines/next/run_fast_scan.py', 'engines/next/run_optimized_scan.py', 'engines/next/market_session_repair.py', 'engines/next/src/**/*.py', 'engines/next/requirements.lock') }}
         run: |
           mkdir -p data/daily_scans data/logs data/batch_results frontend/public/data
           python run_resumable_fast_scan.py \
