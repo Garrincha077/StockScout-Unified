@@ -6,13 +6,14 @@ def _workflow() -> str:
         return handle.read()
 
 
-def test_smoke_workflow_is_manual_and_never_deploys() -> None:
+def test_smoke_workflow_is_manual_or_development_only_and_never_deploys() -> None:
     workflow = _workflow()
     assert "workflow_dispatch:" in workflow
     assert "scanner:" in workflow
     assert "- both" in workflow
     assert "- bottom" in workflow
     assert "- next" in workflow
+    assert "branches: [codex/eod-provider-recovery-20261002]" in workflow
     for forbidden in (
         "deploy-pages",
         "upload-pages-artifact",
@@ -42,3 +43,5 @@ def test_smoke_uses_completed_session_guard_and_bounded_jobs() -> None:
     assert "timeout-minutes: 30" in workflow
     assert "timeout-minutes: 45" in workflow
     assert "cancel-in-progress: true" in workflow
+    assert 'schedule["market_close"] <= now' in workflow
+    assert "Wait for selected session to be available from Next provider" in workflow

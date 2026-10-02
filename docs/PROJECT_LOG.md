@@ -326,3 +326,26 @@
   later for the same session.
 - Added a workflow contract regression test requiring the readiness gate to run before Next
   scanner timing and the full scanner.
+
+## 2026-10-02 — Exact-session Next repair and bounded EOD recovery
+
+- Development checkout: `codex/unified-app`; isolated review branch:
+  `codex/eod-provider-recovery-20261002`, based on main `2dc5862ed91bfcf24db8c6c4e3ed8963b609800b`.
+  The existing remote development branch has independent commits and is preserved.
+- Added a shared complete adjusted exact-session Yahoo reader to the readiness
+  gate and resumable Next wrapper. Retained selected-session, SPY, 80% readiness,
+  stale-symbol exclusion, source pins, frozen Ryan and final publication gates.
+- Added readable readiness diagnostics and one trusted first-attempt EOD retry
+  restricted to a readiness-only Next failure before any publishing or delivery.
+  Reuse successful Bottom handoffs; never replay delivery/validation failures.
+- Added the repair source to checkpoint hashes and a no-send/no-deploy live Next
+  smoke on the isolated review branch. Blank smoke dates use the last completed
+  NYSE session, including before the current session closes.
+- Verification: local root suite 240 passed / 2 documented existing skips;
+  targeted Next suite 19 passed; Ruff, source pins and protected Ryan hashes pass.
+  Remote CI/live results remain to be recorded after the review branch runs.
+- Scoring formulas and ranking definitions unchanged. A recovered complete EOD
+  bar may let a previously excluded ticker be evaluated under existing rules.
+  Continued provider lag/rate limits still fail closed after bounded attempts.
+- Detailed observed runs, caveats, recovery behavior and Trend Birth follow-up
+  acceptance criteria: `docs/EOD_RECOVERY.md`.

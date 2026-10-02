@@ -179,3 +179,45 @@ def test_ohlcv_rate_limit_retries_stop_after_three_attempts(tmp_path, monkeypatc
     assert processor.provider_retry_count == 2
     assert processor.provider_rate_limit_count == 3
     assert processor.provider_error_types == {"rate_limit": 3}
+
+
+def test_partial_terminal_bar_is_repaired_without_losing_history(tmp_path, monkeypatch):
+    monkeypatch.setenv("STOCKSCOUT_EXPECTED_SESSION", "2026-10-01")
+    index = pd.date_range("2026-09-29", periods=3, freq="D")
+    wide = pd.DataFrame({"Open": [10, 11, 12], "High": [12, 13, 14], "Low": [9, 10, 11], "Close": [11, 12, float("nan")], "Volume": [1000, 1100, 1200]}, index=index)
+    exact = wide.tail(1).copy()
+    exact["Close"] = 13.0
+    calls = []
+
+    def download(*args, **kwargs):
+        calls.append(kwargs)
+        return exact if kwargs.get("start") == "2026-10-01" else wide
+
+    monkeypatch.setattr(resumable_module.yf, "download", download)
+    processor = ResumableFastOptimizedBatchProcessor(results_dir=str(tmp_path))
+    result = processor._download_chunk(["SPY"])
+    assert len(calls) == 2
+    assert calls[1]["end"] == "2026-10-02"
+    pd.testing.assert_frame_equal(result["SPY"].iloc[:-1], processor._normalize_frame(wide).iloc[:2])
+    assert len(result["SPY"]) == 3
+    assert result["SPY"].iloc[-1]["Close"] == 13.0
+    assert processor._has_expected_session(result["SPY"])
+
+
+def test_wrong_day_exact_response_cannot_make_history_fresh(tmp_path, monkeypatch):
+    monkeypatch.setenv("STOCKSCOUT_EXPECTED_SESSION", "2026-10-01")
+    stale = pd.DataFrame({"Open": [10], "High": [12], "Low": [9], "Close": [11], "Volume": [1000]}, index=pd.DatetimeIndex(["2026-09-30"]))
+    monkeypatch.setattr(resumable_module.yf, "download", lambda *args, **kwargs: stale)
+    processor = ResumableFastOptimizedBatchProcessor(results_dir=str(tmp_path))
+    result = processor._download_chunk(["SPY"])
+    assert not processor._has_expected_session(result["SPY"])
+    pd.testing.assert_frame_equal(result["SPY"], stale)
+
+
+def test_interactive_scans_keep_existing_history_behavior(tmp_path, monkeypatch):
+    monkeypatch.delenv("STOCKSCOUT_EXPECTED_SESSION", raising=False)
+    frame = pd.DataFrame({"Close": [10.0]}, index=pd.DatetimeIndex(["2026-09-30"]))
+    monkeypatch.setattr(resumable_module.yf, "download", lambda *args, **kwargs: frame)
+    processor = ResumableFastOptimizedBatchProcessor(results_dir=str(tmp_path))
+    result = processor._download_chunk(["AAA"])
+    pd.testing.assert_frame_equal(result["AAA"], frame)
