@@ -1,4 +1,4 @@
 # Manual full EOD backfill request
-scan_date: 2026-09-01
-notify: true
-request: 3
+scan_date: 2026-10-01
+notify: false
+request: recovery-20261002-next-provider-pr101
