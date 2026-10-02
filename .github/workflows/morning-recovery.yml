@@ -185,10 +185,6 @@ jobs:
           request_gridview_refresh() {
             # GITHUB_TOKEN is scoped to this repository. Without a dedicated
             # token, the Trend Birth monitor detects activation every 15 minutes.
-            if [ -z "$TREND_BIRTH_REFRESH_TOKEN" ]; then
-              echo "Trend Birth's activation monitor will pick up the verified session; waiting for exact publication." >> "$GITHUB_STEP_SUMMARY"
-              return 0
-            fi
             if ! curl -fsS --max-time 30 -H 'Cache-Control: no-cache' \
               "https://garrincha077.github.io/StockScout-Unified/data/manifest.json?recovery=$(date +%s)" -o /tmp/unified-refresh-source.json; then
               return 1
@@ -196,6 +192,10 @@ jobs:
             source_run="$(jq -r '.runId // empty' /tmp/unified-refresh-source.json)"
             if ! python scripts/verify_remote_activation.py --run-id "$source_run" --session-date "$SESSION_DATE"; then
               return 1
+            fi
+            if [ -z "$TREND_BIRTH_REFRESH_TOKEN" ]; then
+              echo "Trend Birth's activation monitor will pick up the verified session; waiting for exact publication." >> "$GITHUB_STEP_SUMMARY"
+              return 0
             fi
             GH_TOKEN="$TREND_BIRTH_REFRESH_TOKEN" gh api --method POST \
               repos/Garrincha077/StockScout-Trend-Birth/actions/workflows/refresh-trend-birth-review-lab.yml/dispatches \
