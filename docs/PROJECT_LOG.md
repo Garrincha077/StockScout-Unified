@@ -361,3 +361,13 @@
   Continued provider lag/rate limits still fail closed after bounded attempts.
 - Detailed observed runs, caveats, recovery behavior and Trend Birth follow-up
   acceptance criteria: `docs/EOD_RECOVERY.md`.
+
+## 2026-10-02 — Freshness gate and coordinated morning recovery
+
+- Development: `codex/unified-app`; review topic `codex/eod-trend-freshness-20261002`, based on main `6174072cd6b772db532f5b8aee439902888d803a`.
+- GridView verification now distinguishes aligned pointers from a current market session. Default verification/reservation and stage-alert paths require the latest completed NYSE close; manual historical verification can explicitly request a completed session. Holidays, early closes and before-close checks use the exchange calendar. Reservations, single-send behavior and ambiguous-delivery blocking are preserved.
+- Morning Recovery checks exact public run, session and all three mode hashes, reports activation failure correctly, and waits up to 45 real minutes for the Trend Birth activation monitor. It can directly request the sole refresh controller using an optional scoped `TREND_BIRTH_REFRESH_TOKEN`; there is no assumption that ordinary GITHUB_TOKEN can write to the other repository.
+- Manual recovery defaults to notify=false. Existing ChatGPT morning push-trigger policy remains enabled unless the trigger explicitly sets notify=false. EOD failure blocks downstream recovery delivery. The controller and topic validation do not send messages.
+- Affected: NYSE session helper, GridView publication verifier, remote activation checker, Morning Recovery workflow and regression tests. No detector, signal, score, ranking, frozen Ryan baseline, market-data price basis or delivery ledger state changed.
+- Local tests: 244 passed / 2 documented existing skips; Ruff and changed workflow shell/YAML checks passed. The independent Trend Birth controller/watchdog suite covers no-op, stale upstream, duplicate dispatch, publisher/deployment failure and calendar cases. Remote CI and live dry-run results remain to be recorded.
+- Timing caveat: the monitor runs every 15 minutes in the daytime/recovery window; GitHub queueing plus publisher/deployment time may consume the bounded recovery window. Persistent provider, GitHub or hosting outages remain visible failures.

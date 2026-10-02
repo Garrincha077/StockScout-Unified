@@ -19,6 +19,7 @@ from urllib.parse import urlencode
 import requests
 
 from stock_scout.notifications.telegram import _escape_md_v2, sends_suppressed
+from stockscout_eod.session import decide_session, latest_completed_session
 from stockscout_unified.notifications import _telegram_config
 
 DEFAULT_GRID_URL = "https://stockscout-trend-birth-review-lab.vercel.app"
@@ -75,6 +76,9 @@ def verify_publication(
     grid_url: str = DEFAULT_GRID_URL,
     expected_url: str = DEFAULT_PUBLICATION_URL,
     unified_url: str = DEFAULT_UNIFIED_URL,
+    *,
+    expected_session: str | None = None,
+    now_utc: dt.datetime | None = None,
 ) -> tuple[dict, dict]:
     """Verify the deployed pointer, archive, and snapshot-aware frontend."""
     base = grid_url.rstrip("/")
@@ -121,6 +125,18 @@ def verify_publication(
         active.get(field) != manifest[field] for field in ("runId", "sessionDate")
     ):
         raise ValueError("Review is behind the active Unified scan")
+    expected = expected_session or latest_completed_session(now_utc)
+    if expected_session is not None:
+        decision = decide_session(
+            now_utc=now_utc, requested_date=dt.date.fromisoformat(expected), force=True,
+        )
+        if not decision.should_run:
+            raise ValueError(f"Requested publication session is not completed: {expected}")
+    if manifest["sessionDate"] != expected:
+        raise ValueError(
+            f"Stale market session: expected {expected}, "
+            f"Unified and Review still identify {manifest['sessionDate']}"
+        )
     return manifest, summary
 
 
@@ -225,6 +241,7 @@ def main() -> int:
     parser.add_argument("--ledger-path", type=Path, default=Path(DEFAULT_LEDGER))
     parser.add_argument("--marker-path", type=Path, default=Path(DEFAULT_MARKER))
     parser.add_argument("--reservation-id", default="")
+    parser.add_argument("--session-date", default=None, help="Explicit completed session for a manual historical verification")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--prepare", action="store_true")
     mode.add_argument("--send-reserved", action="store_true")
@@ -232,7 +249,7 @@ def main() -> int:
     if args.send_reserved:
         return 0 if send_reserved(args.ledger_path, args.reservation_id) else 1
     try:
-        manifest, summary = verify_publication(args.grid_url)
+        manifest, summary = verify_publication(args.grid_url, expected_session=args.session_date)
     except PublicationPending as error:
         if not args.prepare:
             raise

@@ -2,6 +2,7 @@ import hashlib
 import json
 import tempfile
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -87,8 +88,24 @@ class DeliveryTests(unittest.TestCase):
             ).encode(),
         ]
         with patch.object(notification, "fetch_bytes", side_effect=replies) as fetch:
-            self.assertEqual((manifest, summary), notification.verify_publication())
+            self.assertEqual((manifest, summary), notification.verify_publication(now_utc=datetime(2026, 9, 22, 9, tzinfo=UTC)))
             self.assertFalse(any("latest.json" in call.args[0] for call in fetch.call_args_list))
+
+    def test_aligned_publication_one_session_behind_is_stale(self):
+        manifest, content, _ = publication()
+        pointer = json.dumps(manifest).encode()
+        replies = [pointer, pointer, content, b"snapshot-loader.js", b"ReviewSnapshots data/snapshots/", pointer,
+                   json.dumps({"status": "healthy", "runId": manifest["runId"], "sessionDate": manifest["sessionDate"]}).encode()]
+        with patch.object(notification, "fetch_bytes", side_effect=replies), self.assertRaisesRegex(ValueError, "expected 2026-09-22"):
+            notification.verify_publication(now_utc=datetime(2026, 9, 22, 21, tzinfo=UTC))
+
+    def test_explicit_completed_historical_verification_is_supported(self):
+        manifest, content, summary = publication()
+        pointer = json.dumps(manifest).encode()
+        replies = [pointer, pointer, content, b"snapshot-loader.js", b"ReviewSnapshots data/snapshots/", pointer,
+                   json.dumps({"status": "healthy", "runId": manifest["runId"], "sessionDate": manifest["sessionDate"]}).encode()]
+        with patch.object(notification, "fetch_bytes", side_effect=replies):
+            self.assertEqual((manifest, summary), notification.verify_publication(expected_session="2026-09-21", now_utc=datetime(2026, 9, 22, 21, tzinfo=UTC)))
 
     def test_failed_or_partial_deploy_is_rejected_before_send(self):
         manifest, content, _ = publication()
