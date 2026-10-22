@@ -4,7 +4,12 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from stockscout_eod.runner import _frame_last_date, _preflight_tickers, preflight_session, validate_probe_dates
+from stockscout_eod.runner import (
+    _frame_last_date,
+    _preflight_tickers,
+    preflight_session,
+    validate_probe_dates,
+)
 
 
 def test_preflight_representative_sample_avoids_alphabetical_illiquid_cluster():
