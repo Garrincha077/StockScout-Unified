@@ -21,7 +21,8 @@ def test_preflight_representative_sample_avoids_alphabetical_illiquid_cluster():
     assert tickers == [
         "SPY", "QQQ", "AAPL", "MSFT", "NVDA", "AMZN", "JPM", "XOM", "UNH", "WMT",
     ]
-    assert not set(tickers).intersection({"AAC", "AACI", "AACO", "AACP", "AADB", "AAFC", "AAG", "AAHI"})
+    stale_prefix_cluster = {"AAC", "AACI", "AACO", "AACP", "AADB", "AAFC", "AAG", "AAHI"}
+    assert stale_prefix_cluster.isdisjoint(tickers)
 
 
 def test_preflight_spreads_fallback_and_preserves_fixture_probe_size():
