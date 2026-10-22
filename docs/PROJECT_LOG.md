@@ -1,5 +1,14 @@
 # StockScout Unified project log
 
+## 2026-10-22 — Representative market-data preflight for EOD reliability
+
+- Hotfix topic branch: `fix/eod-preflight-representative-sample-20261022`, based on current `main` because the long-lived `codex/unified-app` branch predates the production preflight feature. Frozen scanner engines, rankings, scoring and notification semantics remain untouched.
+- Symptom: first 2026-10-21 EOD run `39697452047` rejected 6/10 fresh bars in a preflight sample biased to the first eight alphabetical universe symbols (AAC/AACI/AACO/AACP were lagging). Recovery run `39755499898` later passed and activated the intended session.
+- Change: probe SPY and QQQ plus up to eight liquid, cross-sector references present in the actual universe. If fewer liquid references exist (test/fixture universes), fill remaining slots deterministically across the ordered universe instead of taking only its alphabetical prefix. All original 80% early-coverage, SPY exact-date, bounded retry and full post-scan publication health gates remain unchanged.
+- Tests: add regression cases against the alphabetical lagging-symbol cluster, deterministic sparse-universe fallback, and fixture sample count. The existing transient-lag retry test remains.
+- Limit: this is a representative early feed check, not certification that every illiquid equity has a current bar; the separate full publication health gate remains authoritative.
+- Next: confirm Required CI is green, then promote the narrow hotfix before the next overnight EOD.
+
 ## 2026-09-02 — Immutable owner-alert retry snapshot
 
 - Persist the exact `.notify/alerts.json` produced by the source EOD run before Telegram delivery as a private 14-day artifact.

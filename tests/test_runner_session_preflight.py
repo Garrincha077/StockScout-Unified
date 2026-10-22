@@ -4,7 +4,35 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from stockscout_eod.runner import _frame_last_date, preflight_session, validate_probe_dates
+from stockscout_eod.runner import (
+    _frame_last_date,
+    _preflight_tickers,
+    preflight_session,
+    validate_probe_dates,
+)
+
+
+def test_preflight_representative_sample_avoids_alphabetical_illiquid_cluster():
+    universe = [
+        "AAC", "AACI", "AACO", "AACP", "AADB", "AAFC", "AAG", "AAHI",
+        "AAPL", "MSFT", "NVDA", "AMZN", "JPM", "XOM", "UNH", "WMT",
+    ]
+    tickers = _preflight_tickers(universe)
+    assert tickers == [
+        "SPY", "QQQ", "AAPL", "MSFT", "NVDA", "AMZN", "JPM", "XOM", "UNH", "WMT",
+    ]
+    stale_prefix_cluster = {"AAC", "AACI", "AACO", "AACP", "AADB", "AAFC", "AAG", "AAHI"}
+    assert stale_prefix_cluster.isdisjoint(tickers)
+
+
+def test_preflight_spreads_fallback_and_preserves_fixture_probe_size():
+    assert _preflight_tickers([f"T{i}" for i in range(8)]) == [
+        "SPY", "QQQ", "T0", "T1", "T2", "T3", "T4", "T5", "T6", "T7",
+    ]
+    assert _preflight_tickers(["AAC", "AACP", "WMT"], sample_size=2) == [
+        "SPY", "QQQ", "WMT", "AACP",
+    ]
+    assert _preflight_tickers(["SPY", "QQQ"], sample_size=8) == ["SPY", "QQQ"]
 
 
 def test_probe_requires_benchmark_at_selected_session():

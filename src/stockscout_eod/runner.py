@@ -20,6 +20,12 @@ from stockscout_eod.jsonio import atomic_write_json, json_compatible
 
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _PREFLIGHT_RETRY_DELAYS_SECONDS = (10.0, 30.0)
+# Liquid cross-sector references: avoid an alphabetical NASDAQ microcap cluster.
+# The full publication health gate still validates the actual scan universe.
+_PREFLIGHT_LIQUID_REFERENCES = (
+    "AAPL", "MSFT", "NVDA", "AMZN", "JPM", "XOM", "UNH", "WMT",
+    "GOOGL", "META", "COST", "TSLA",
+)
 log = get_logger(__name__)
 
 
@@ -67,6 +73,23 @@ def validate_probe_dates(
         )
 
 
+def _preflight_tickers(universe: list[str], sample_size: int = 8) -> list[str]:
+    """Prefer liquid universe members; spread any fallback across the universe."""
+    size = max(0, int(sample_size))
+    symbols = list(dict.fromkeys(ticker.upper() for ticker in universe))
+    universe_set = set(symbols)
+    references = [ticker for ticker in _PREFLIGHT_LIQUID_REFERENCES if ticker in universe_set]
+    sample = references[:size]
+    remaining = sorted(ticker for ticker in symbols if ticker not in sample and ticker not in ("SPY", "QQQ"))
+    need = min(size - len(sample), len(remaining))
+    if need:
+        sample.extend(
+            remaining[(2 * index + 1) * len(remaining) // (2 * need)]
+            for index in range(need)
+        )
+    return list(dict.fromkeys(("SPY", "QQQ", *sample)))
+
+
 def preflight_session(
     runner: PipelineRunner,
     session_date: date,
@@ -76,7 +99,7 @@ def preflight_session(
 ) -> None:
     """Probe the benchmark and a deterministic universe sample before scanning."""
     start = history_start(runner.settings.cache.daily_history_years, session_date)
-    tickers = ["SPY", "QQQ", *universe[: max(0, int(sample_size))]]
+    tickers = _preflight_tickers(universe, sample_size)
     last_error: ValueError | None = None
     for attempt in range(len(_PREFLIGHT_RETRY_DELAYS_SECONDS) + 1):
         probed: dict[str, date | None] = {}
@@ -155,7 +178,7 @@ def run_scan(
     preflight_session(pipeline, session_date, universe)
     print(
         f"Market-session preflight passed: session={session_date.isoformat()} "
-        f"sample={min(len(universe), 8) + 2} symbols"
+        f"sample={len(_preflight_tickers(universe))} symbols"
     )
     result = pipeline.run(universe, as_of=session_date)
     generated = (generated_at or datetime.now(tz=UTC)).astimezone(UTC)
