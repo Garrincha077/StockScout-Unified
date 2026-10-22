@@ -21,7 +21,7 @@ def test_preflight_representative_sample_avoids_alphabetical_illiquid_cluster():
     assert tickers == [
         "SPY", "QQQ", "AAPL", "MSFT", "NVDA", "AMZN", "JPM", "XOM", "UNH", "WMT",
     ]
-    assert not any(ticker.startswith("AA") for ticker in tickers[2:])
+    assert not set(tickers).intersection({"AAC", "AACI", "AACO", "AACP", "AADB", "AAFC", "AAG", "AAHI"})
 
 
 def test_preflight_spreads_fallback_and_preserves_fixture_probe_size():
