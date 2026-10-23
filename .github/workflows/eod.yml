@@ -127,7 +127,7 @@ jobs:
           python -m pip install -r requirements.lock
           python -m pip install -e .
 
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: data/cache
           key: unified-bottom-market-${{ runner.os }}-${{ needs.prepare.outputs.session_date }}-${{ hashFiles('requirements.lock') }}
@@ -234,7 +234,7 @@ jobs:
           python -m pip install --require-hashes -r engines/next/requirements.lock
           python -m pip install -e .
 
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             engines/next/data/fundamentals_cache
