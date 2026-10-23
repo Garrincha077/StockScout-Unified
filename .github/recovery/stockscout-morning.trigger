@@ -1,6 +1,6 @@
 # Managed by the ChatGPT morning watchdog.
-targets=eod
-session_date=2026-10-21
+targets=gridview
+session_date=2026-10-22
 notify=true
-reason=retry-failed-eod-bottom-preflight-coverage-6-of-10
-requested_at=2026-10-22T09:26:00Z
+reason=2026-10-23-aligned-reviewlab-success-vercel-ready-exact-session-gridview-delivery
+requested_at=2026-10-23T08:15:03.453Z
