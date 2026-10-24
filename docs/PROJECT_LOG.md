@@ -1,5 +1,14 @@
 # StockScout Unified project log
 
+## 2026-10-24 — Intraday Kell Trend Birth 0/4–4/4 distribution
+
+- Topic branch codex/trend-birth-stage-distribution-20261024 from current main. The long-lived codex/unified-app branch is 161 commits behind and diverged, so it is unsafe for this narrow production feature.
+- Existing sparse READY/TRIGGER/INVALIDATED Telegram messages now append a five-stage live count for unique quality-screened Kell candidates plus tracked watchlist tickers evaluated on the hourly run.
+- Unavailable or insufficient data are never classified as 0/4. Counts are current raw stages; existing hysteresis continues to govern transition alerts.
+- Dry-run JSON includes stageDistribution. No new notification series, sending schedule, model threshold, rankings, trading logic or source request introduced.
+- Unit tests added for deduplication, missing data, exact tally and verified dashboard link. Existing full CI remains required prior to merge.
+- Companion Review Lab EOD historical chart has broader Unified + tracked-watchlist scope, labeled separately from the hourly data.
+
 ## 2026-10-22 — Representative market-data preflight for EOD reliability
 
 - Hotfix topic branch: `fix/eod-preflight-representative-sample-20261022`, based on current `main` because the long-lived `codex/unified-app` branch predates the production preflight feature. Frozen scanner engines, rankings, scoring and notification semantics remain untouched.

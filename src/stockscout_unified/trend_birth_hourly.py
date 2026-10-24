@@ -434,6 +434,35 @@ def process_results(
     return state, events
 
 
+def stage_distribution(candidates: list[dict[str, Any]],
+                       results: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Count unique live Kell + watchlist names; unavailable is not 0/4."""
+    tickers = {str(item.get("ticker") or "").strip().upper()
+               for item in candidates if item.get("ticker")}
+    counts = {str(stage): 0 for stage in range(5)}
+    unavailable = 0
+    for ticker in tickers:
+        result = results.get(ticker) or {}
+        stage = result.get("stage")
+        if result.get("available") is not True or type(stage) is not int or not 0 <= stage <= 4:
+            unavailable += 1
+        else:
+            counts[str(stage)] += 1
+    evaluated = sum(counts.values())
+    return {"counts": counts, "evaluatedCount": evaluated,
+            "unavailableCount": unavailable, "universeCount": len(tickers)}
+
+
+def _distribution_lines(distribution: dict[str, Any] | None) -> list[str]:
+    if not distribution:
+        return []
+    counts = distribution["counts"]
+    return ["", "📊 Intraday pregled · Kell + watchlist",
+            " · ".join(f"{stage}/4: {counts[str(stage)]}" for stage in range(5)),
+            f"Analizirano {distribution['evaluatedCount']}/{distribution['universeCount']}; "
+            f"bez podataka {distribution['unavailableCount']}", ""]
+
+
 def _dashboard_url(grid_url: str, snapshot_id: str) -> str:
     return grid_url.rstrip("/") + "/?" + urlencode({"snapshot": snapshot_id})
 
@@ -442,7 +471,8 @@ def _render_link(url: str) -> str:
     return f"[View dashboard]({_escape_md_v2(url)})"
 
 
-def build_series(events: dict[str, list[dict[str, Any]]], dashboard_url: str) -> dict[str, list[str]]:
+def build_series(events: dict[str, list[dict[str, Any]]], dashboard_url: str,
+                 distribution: dict[str, Any] | None = None) -> dict[str, list[str]]:
     series: dict[str, list[str]] = {}
     ready = events["ready"]
     if ready:
@@ -459,6 +489,7 @@ def build_series(events: dict[str, list[dict[str, Any]]], dashboard_url: str) ->
                 lines.append("❌ Still needed: " + "; ".join(missing))
             lines.append("")
         extra = len(ready) - len(shown)
+        lines.extend(_distribution_lines(distribution))
         if extra:
             lines.append(f"+{extra} additional candidates — DASHBOARD")
         else:
@@ -482,7 +513,8 @@ def build_series(events: dict[str, list[dict[str, Any]]], dashboard_url: str) ->
         lines.extend(
             f"{'✅' if checks.get(key) else '❌'} {label}" for key, label in CHECK_LABELS
         )
-        lines.extend(["", "Final confirmation is the completed daily bar.", "DASHBOARD"])
+        lines.extend(["", "Final confirmation is the completed daily bar.",
+                      *_distribution_lines(distribution), "DASHBOARD"])
         text = _escape_md_v2("\n".join(lines)).replace(
             _escape_md_v2("DASHBOARD"),
             _render_link(dashboard_url),
@@ -498,6 +530,7 @@ def build_series(events: dict[str, list[dict[str, Any]]], dashboard_url: str) ->
         lines.extend(f"{item['ticker']} — 4/4 intraday / provisional" for item in shown)
         extra = len(triggers) - len(shown)
         lines.extend(["", "Final confirmation is the completed daily bar."])
+        lines.extend(_distribution_lines(distribution))
         lines.append(f"+{extra} additional candidates — DASHBOARD" if extra else "DASHBOARD")
         text = _escape_md_v2("\n".join(lines).strip()).replace(
             _escape_md_v2("DASHBOARD"),
@@ -517,6 +550,7 @@ def build_series(events: dict[str, list[dict[str, Any]]], dashboard_url: str) ->
             for item in invalidated[:MAX_READY]
         )
         extra = len(invalidated) - min(len(invalidated), MAX_READY)
+        lines.extend(_distribution_lines(distribution))
         lines.extend(["", f"+{extra} additional candidates — DASHBOARD" if extra else "DASHBOARD"])
         text = _escape_md_v2("\n".join(lines)).replace(
             _escape_md_v2("DASHBOARD"),
@@ -625,7 +659,8 @@ def main() -> int:
     prior = load_state(args.state_path)
     next_state, events = process_results(candidates, live, prior)
     dashboard = _dashboard_url(args.grid_url, str(manifest["snapshotId"]))
-    series = build_series(events, dashboard)
+    distribution = stage_distribution(candidates, live)
+    series = build_series(events, dashboard, distribution)
 
     summary = {
         "ruleset": RULESET,
@@ -633,6 +668,7 @@ def main() -> int:
         "universe": len(candidates),
         "trackedWatchlist": len(owner_watchlist),
         "liveAvailable": sum(result.get("available") is True for result in live.values()),
+        "stageDistribution": distribution,
         "ready": len(events["ready"]),
         "trigger": len(events["trigger"]),
         "invalidated": len(events["invalidated"]),
