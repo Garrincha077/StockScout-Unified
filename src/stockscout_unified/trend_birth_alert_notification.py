@@ -96,9 +96,9 @@ def build_series(payload: dict[str, Any], mode: str = "legacy") -> dict[str, lis
         selected = payload.get("v2") or {}
         if selected.get("schemaVersion") != "stockscout-alerts-v2":
             raise ValueError("Weekly v2 alerts are unavailable for this publication")
-        if selected.get("baselineOnly") is True:
-            return {}
-        messages = [*(selected.get("messages") or []),
+        # A v2 shortlist can be on its own baseline while a verified full-universe
+        # EOD intelligence series is already comparable to its prior session.
+        messages = [*([] if selected.get("baselineOnly") is True else selected.get("messages") or []),
                     *(msg for msg in payload.get("messages") or []
                       if msg.get("kind") == "intelligence-eod")]
     elif mode == "legacy":
