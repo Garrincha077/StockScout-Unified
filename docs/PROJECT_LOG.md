@@ -1,5 +1,12 @@
 # StockScout Unified project log
 
+## 2026-10-24 — Accept reviewed full-universe Trend Birth intelligence EOD via existing Telegram sender
+
+- Companion Review Lab PR #51 creates one `intelligence-eod` no-send message containing the full Unified + tracked watchlist 0/4–4/4 tally, genuine inter-session upgrades/downgrades, new 4/4 names and verified dashboard link.
+- Existing `trend_birth_alert_notification.py` must accept only the additional explicit message kind in the already-verified publication, preserving strict date/snapshot checks, Markdown escaping, existing delivery ledger, and no new bot/workflow/credential. In `weekly-v2` mode, include the verified `intelligence-eod` message alongside existing v2 series; in `legacy`, it already flows as part of the traditional message list. `shadow` stays no-send.
+- Baseline-only alert payloads still cannot send messages. No change to trading, scanner, data-provider or trigger thresholds.
+- Unit tests verify separate resumable EOD series in both modes and silence in shadow mode. Deploy this sender contract **before** merging the producer that publishes the new message; verify a real production EOD after both changes.
+
 ## 2026-10-24 — Intraday Kell Trend Birth 0/4–4/4 distribution
 
 - Topic branch codex/trend-birth-stage-distribution-20261024 from current main. The long-lived codex/unified-app branch is 161 commits behind and diverged, so it is unsafe for this narrow production feature.

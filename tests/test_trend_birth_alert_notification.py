@@ -84,3 +84,18 @@ def test_shadow_sends_nothing_and_v2_uses_two_grouped_series():
         "trend-birth-v2-weekly", "trend-birth-v2-kell-daily",
     }
     assert list(build_series(data, mode="legacy")) == ["trend-birth-trigger-OLD"]
+
+def test_verified_eod_intelligence_uses_existing_sender_in_both_modes():
+    url = payload()["dashboardUrl"]
+    eod = {
+        "kind": "intelligence-eod",
+        "text": "📊 TREND BIRTH — EOD PROMJENE\\nNova 4/4: 2 · Nazadovalo: 7\\nView dashboard: " + url,
+    }
+    data = payload(messages=[eod], v2={
+        "schemaVersion": "stockscout-alerts-v2",
+        "baselineOnly": False,
+        "messages": [],
+    })
+    assert "trend-birth-intelligence-eod" in build_series(data, mode="legacy")
+    assert "trend-birth-v2-intelligence-eod" in build_series(data, mode="weekly-v2")
+    assert build_series(data, mode="shadow") == {}

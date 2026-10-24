@@ -18,7 +18,7 @@ from stockscout_unified.notifications import deliver_series
 
 ALERT_PATH = "/data/trend-birth-alerts.json"
 ALERT_SCHEMA = "trend-birth-alerts-v1"
-ALLOWED_KINDS = {"ready", "trigger", "invalidated"}
+ALLOWED_KINDS = {"ready", "trigger", "invalidated", "intelligence-eod"}
 V2_KINDS = {"weekly", "kell-daily"}
 
 
@@ -98,7 +98,9 @@ def build_series(payload: dict[str, Any], mode: str = "legacy") -> dict[str, lis
             raise ValueError("Weekly v2 alerts are unavailable for this publication")
         if selected.get("baselineOnly") is True:
             return {}
-        messages = selected.get("messages") or []
+        messages = [*(selected.get("messages") or []),
+                    *(msg for msg in payload.get("messages") or []
+                      if msg.get("kind") == "intelligence-eod")]
     elif mode == "legacy":
         if payload.get("baselineOnly") is True:
             return {}
