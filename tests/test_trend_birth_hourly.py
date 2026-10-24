@@ -10,6 +10,7 @@ from stockscout_unified.trend_birth_hourly import (
     evaluate_stage,
     merge_owner_watchlist,
     process_results,
+    stage_distribution,
 )
 
 
@@ -239,4 +240,36 @@ def test_multiple_triggers_are_grouped_to_avoid_telegram_spam():
     text = "\n".join(series["trend-birth-hourly-trigger"])
     assert "8 new candidates" in text
     assert "+3 additional candidates" in text
+    assert "[View dashboard](" in text
+
+
+def test_stage_distribution_reconciles_unique_names_and_unavailable():
+    candidates = [{"ticker": "AAA"}, {"ticker": "aaa"}, {"ticker": "BBB"},
+                  {"ticker": "CCC"}, {"ticker": "DDD"}, {"ticker": "EEE"},
+                  {"ticker": "FFF"}, {"ticker": "MISSING"}]
+    results = {
+        "AAA": {"available": True, "stage": 0},
+        "BBB": {"available": True, "stage": 1},
+        "CCC": {"available": True, "stage": 2},
+        "DDD": {"available": True, "stage": 3},
+        "EEE": {"available": True, "stage": 4},
+        "FFF": {"available": False, "stage": 0},
+    }
+    result = stage_distribution(candidates, results)
+    assert result["counts"] == {"0": 1, "1": 1, "2": 1, "3": 1, "4": 1}
+    assert result["evaluatedCount"] == 5
+    assert result["universeCount"] == 7
+    assert result["unavailableCount"] == 2
+
+
+def test_sparse_trigger_message_includes_same_intraday_tally_and_dashboard_link():
+    distribution = {"counts": {"0": 7, "1": 6, "2": 5, "3": 4, "4": 3},
+                    "evaluatedCount": 25, "universeCount": 27, "unavailableCount": 2}
+    trigger = {"ticker": "AAA", "trendBirthHourly": {
+        "checks": {key: True for key, _ in CHECK_LABELS}}}
+    url = "https://example.test/?snapshot=abc--" + "c" * 64
+    series = build_series({"ready": [], "trigger": [trigger], "invalidated": []}, url, distribution)
+    text = "\n".join(series["trend-birth-hourly-trigger-AAA"]).replace("\\", "")
+    assert "0/4: 7 · 1/4: 6 · 2/4: 5 · 3/4: 4 · 4/4: 3" in text
+    assert "Analizirano 25/27; bez podataka 2" in text
     assert "[View dashboard](" in text
