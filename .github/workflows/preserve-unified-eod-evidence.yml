@@ -1,0 +1,62 @@
+name: Preserve exact missing Unified EOD evidence
+
+on:
+  push:
+    branches:
+      - "codex/unified-app"
+    paths:
+      - ".github/workflows/preserve-unified-eod-evidence.yml"
+      - "scripts/preserve_unified_eod_evidence.py"
+      - "tests/test_preserve_unified_eod_evidence.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: tb-source-evidence-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  preserve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Fail-closed original artifact evidence tests
+        run: python -m unittest discover -s tests -p test_preserve_unified_eod_evidence.py -v
+      - name: Download and independently verify exact expiring Pages ZIP files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/preserve_unified_eod_evidence.py --output-dir "$RUNNER_TEMP/tb-source-evidence"
+      - name: Create draft release, no Git archive inflation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          evidence_tag="tb-eod-source-evidence-2026-10-25"
+          if gh release view "$evidence_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Evidence tag already exists; refusing to rewrite existing assets."
+            exit 1
+          fi
+          gh release create "$evidence_tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" \
+            --title "Original Unified EOD evidence: Oct 15 and 19, 2026" \
+            --notes "Preserved original upstream Pages artifacts with pinned source run, ZIP SHA256 and point-in-time manifest verification. Evidence only; not an EOD stage/outcome backfill. Draft deliberately avoids public redistribution."
+      - name: Upload exact ZIP bytes and signed-off provenance manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload tb-eod-source-evidence-2026-10-25 \
+            "$RUNNER_TEMP/tb-source-evidence/unified-eod-2026-10-15-pages.zip" \
+            "$RUNNER_TEMP/tb-source-evidence/unified-eod-2026-10-19-pages.zip" \
+            "$RUNNER_TEMP/tb-source-evidence/source-evidence-manifest.json" \
+            --repo "$GITHUB_REPOSITORY"
+      - name: Verify remote draft release asset count, byte sizes and SHA256
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/preserve_unified_eod_evidence.py --output-dir "$RUNNER_TEMP/tb-source-evidence" --verify-release
