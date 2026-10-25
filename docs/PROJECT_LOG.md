@@ -100,3 +100,11 @@
   Unified Pages site/redirect URL with public signup disabled, the PR CI check is
   required on `main`, a manual `notify=false` run succeeds, and five consecutive
   scheduled sessions pass.
+
+
+## 2026-10-25 — One-shot original EOD artifact retention for Trend Birth
+
+- Affected dates: 2026-10-15 and 2026-10-19 were scanned and published by this upstream Unified repository but absent from downstream Trend Birth immutable daily stage archive. The original source GitHub Pages artifacts expire 2026-10-30 and 2026-11-03 UTC. Recovery tracking: StockScout-Trend-Birth issue #62 and PR #63.
+- On development branch `codex/unified-app`, added `scripts/preserve_unified_eod_evidence.py`, focused regression tests, and a branch-scoped one-shot workflow. It downloads only exact original artifacts 12016667723 and 12235521722 via this same repository's `GITHUB_TOKEN` Actions-read permission, verifies pinned ZIP SHA256/bytes/CRC and four source run/session manifests, then stores both ZIPs plus JSON provenance in a **draft GitHub Release**. No ZIP blobs are added to Git history or the Vercel build.
+- This does **not** change scheduled source scans, prices, ranking, alerts, published EOD data or any historical Trend Birth stage/outcome archive. It is source preservation only; reconstructing intermediary events safely requires a distinct versioned downstream replay.
+- Validation condition: one-shot Actions run must succeed and GitHub Release assets (names, sizes, SHA256) must reconcile; do not claim durable preservation until verified.
