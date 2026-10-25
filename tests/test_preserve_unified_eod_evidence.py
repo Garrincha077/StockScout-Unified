@@ -88,7 +88,7 @@ class EvidenceTests(unittest.TestCase):
                 "verifiedSha256": "sha256:abc",
             }]
         }
-        release = {"draft": True, "html_url": "https://github.com/x/y/releases/tag/t",
+        release = {"tag_name": evidence.RELEASE_TAG, "draft": True, "html_url": "https://github.com/x/y/releases/tag/t",
                    "assets": [
                        {"name": "a.zip", "size": 123, "digest": "sha256:abc"},
                        {"name": "source-evidence-manifest.json", "size": 10},

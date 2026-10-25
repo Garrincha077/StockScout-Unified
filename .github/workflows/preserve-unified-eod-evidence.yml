@@ -1,4 +1,5 @@
 name: Preserve exact missing Unified EOD evidence
+# One-shot branch-only source verification; deployed data remains unchanged.
 
 on:
   push:
@@ -22,6 +23,11 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            scripts/preserve_unified_eod_evidence.py
+            tests/test_preserve_unified_eod_evidence.py
+          sparse-checkout-cone-mode: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
