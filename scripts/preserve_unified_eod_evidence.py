@@ -160,14 +160,20 @@ def preserve(destination: Path) -> dict:
     return manifest
 
 
-def verify_release(manifest: dict, repo: str) -> None:
-    release = _gh("api", f"repos/{repo}/releases/tags/{RELEASE_TAG}")
+def verify_release(manifest: dict, repo: str, manifest_path: Path | None = None) -> None:
+    releases = _gh("api", f"repos/{repo}/releases?per_page=100")
+    matching = [item for item in releases if item.get("tag_name") == RELEASE_TAG]
+    if len(matching) != 1:
+        raise ValueError("Expected one exact draft evidence release for pinned tag")
+    release = matching[0]
     if not release.get("draft"):
         raise ValueError("Evidence release must remain a private draft")
     assets = {a["name"]: a for a in release.get("assets", [])}
     expected = [(row["archivedName"], row["verifiedSize"], row["verifiedSha256"])
                 for row in manifest["sources"]]
-    expected.append(("source-evidence-manifest.json", None, None))
+    expected.append(("source-evidence-manifest.json",
+                     manifest_path.stat().st_size if manifest_path else None,
+                     _sha256(manifest_path) if manifest_path else None))
     for name, size, digest in expected:
         asset = assets.get(name)
         if not asset:
@@ -187,8 +193,9 @@ def main() -> None:
     parser.add_argument("--verify-release", action="store_true")
     args = parser.parse_args()
     if args.verify_release:
-        manifest = json.loads((args.output_dir / "source-evidence-manifest.json").read_text())
-        verify_release(manifest, os.environ["GITHUB_REPOSITORY"])
+        manifest_path = args.output_dir / "source-evidence-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        verify_release(manifest, os.environ["GITHUB_REPOSITORY"], manifest_path)
     else:
         preserve(args.output_dir)
 

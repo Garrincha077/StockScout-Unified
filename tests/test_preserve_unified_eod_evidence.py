@@ -93,7 +93,7 @@ class EvidenceTests(unittest.TestCase):
                        {"name": "a.zip", "size": 123, "digest": "sha256:abc"},
                        {"name": "source-evidence-manifest.json", "size": 10},
                    ]}
-        with patch.object(evidence, "_gh", return_value=release):
+        with patch.object(evidence, "_gh", return_value=[release]):
             evidence.verify_release(manifest, "x/y")
         release["draft"] = False
         with patch.object(evidence, "_gh", return_value=release):
