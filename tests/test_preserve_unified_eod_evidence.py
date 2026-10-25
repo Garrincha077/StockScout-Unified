@@ -96,12 +96,12 @@ class EvidenceTests(unittest.TestCase):
         with patch.object(evidence, "_gh", return_value=[release]):
             evidence.verify_release(manifest, "x/y")
         release["draft"] = False
-        with patch.object(evidence, "_gh", return_value=release):
+        with patch.object(evidence, "_gh", return_value=[release]):
             with self.assertRaisesRegex(ValueError, "private draft"):
                 evidence.verify_release(manifest, "x/y")
         release["draft"] = True
         release["assets"][0]["digest"] = "sha256:bad"
-        with patch.object(evidence, "_gh", return_value=release):
+        with patch.object(evidence, "_gh", return_value=[release]):
             with self.assertRaisesRegex(ValueError, "digest mismatch"):
                 evidence.verify_release(manifest, "x/y")
 

@@ -1,5 +1,5 @@
 name: Preserve exact missing Unified EOD evidence
-# One-shot branch-only source verification; deployed data remains unchanged.
+# One-shot branch-only source verification; draft assets already safely retained.
 
 on:
   push:
