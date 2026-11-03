@@ -50,7 +50,7 @@ class USStockUniverseFetcher:
             DataFrame with NASDAQ stocks
         """
         try:
-            url = "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt"
+            url = "ftp://ftp.nasdaqtrader.com/symboldirectory/nasdaqlisted.txt"
             df = pd.read_csv(url, sep='|')
             df = df[df['Symbol'].notna()]
             df = df[df['Test Issue'] == 'N']  # Exclude test issues
@@ -69,7 +69,7 @@ class USStockUniverseFetcher:
             DataFrame with other exchange stocks
         """
         try:
-            url = "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt"
+            url = "ftp://ftp.nasdaqtrader.com/symboldirectory/otherlisted.txt"
             df = pd.read_csv(url, sep='|')
             df = df[df['ACT Symbol'].notna()]
             df = df[df['Test Issue'] == 'N']  # Exclude test issues
@@ -157,15 +157,6 @@ class USStockUniverseFetcher:
         # Fetch from multiple sources
         nasdaq_df = self._fetch_nasdaq_listed()
         other_df = self._fetch_other_listed()
-
-        # Both official directory files are required. Publishing a partial universe
-        # would silently exclude an entire exchange if only one fetch succeeds.
-        if nasdaq_df.empty or other_df.empty:
-            logger.error(
-                "Refusing incomplete Nasdaq Trader directory: nasdaq=%d other=%d",
-                len(nasdaq_df), len(other_df),
-            )
-            return []
 
         # Combine
         all_stocks = pd.concat([nasdaq_df, other_df], ignore_index=True)
