@@ -5,8 +5,8 @@ The pinned engine still performs all its own parsing, filtering and sorting.
 No synthetic prices, adjusted universes or partial-exchange fallback is allowed.
 """
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pandas as pd
 
