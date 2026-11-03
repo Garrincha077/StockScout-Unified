@@ -30,7 +30,7 @@ def test_expensive_bottom_result_is_reusable_and_handed_off_before_assembly() ->
     assemble = workflow.index("  assemble:")
     assert restore < scan < rebind < validate < save < handoff < assemble
     assert "actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830" in workflow
-    assert "actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830" in workflow
+    assert "actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9" in workflow
     assert "steps.bottom_checkpoint.outputs.cache-hit != 'true'" in workflow
     assert "steps.bottom_checkpoint.outputs.cache-hit == 'true'" in workflow
     assert "rebind-bottom-checkpoint" in workflow
