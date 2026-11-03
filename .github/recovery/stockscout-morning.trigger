@@ -1,6 +1,6 @@
 # Managed by the ChatGPT morning watchdog.
-targets=eod
+targets=gridview
 session_date=2026-11-02
 notify=true
-reason=2026-11-03-infrastructure-only-https-universe-preflight-after-verified-ci
-requested_at=2026-11-03T09:20:01.116Z
+reason=2026-11-03-exact-unified-review-kell-vercel-verified-once-only-gridview-delivery
+requested_at=2026-11-03T10:06:09.067Z
