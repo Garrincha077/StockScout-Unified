@@ -271,6 +271,10 @@ jobs:
             echo "No prior-attempt Next progress checkpoint was available; scanner will start clean." >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      - name: Prime pinned Next universe cache via official Nasdaq HTTPS
+        working-directory: engines/next
+        run: python ../../scripts/prime_next_universe_https.py
+
       - name: Run Next scanner (adjusted OHLCV)
         working-directory: engines/next
         env:
