@@ -1,3 +1,4 @@
+import gzip
 import hashlib
 import json
 import tempfile
@@ -90,6 +91,24 @@ class DeliveryTests(unittest.TestCase):
         with patch.object(notification, "fetch_bytes", side_effect=replies) as fetch:
             self.assertEqual((manifest, summary), notification.verify_publication(now_utc=datetime(2026, 9, 22, 9, tzinfo=UTC)))
             self.assertFalse(any("latest.json" in call.args[0] for call in fetch.call_args_list))
+
+    def test_deployed_gzip_archive_is_lossless_and_hash_checked(self):
+        manifest, content, summary = publication()
+        manifest["snapshotPath"] += ".gz"
+        manifest["snapshotEncoding"] = "gzip"
+        pointer = json.dumps(manifest).encode()
+        active = json.dumps({
+            "runId": manifest["runId"], "sessionDate": manifest["sessionDate"],
+            "status": "healthy",
+        }).encode()
+        replies = [pointer, pointer, gzip.compress(content, mtime=0),
+                   b"snapshot-loader.js", b"ReviewSnapshots data/snapshots/", pointer, active]
+        with patch.object(notification, "fetch_bytes", side_effect=replies):
+            self.assertEqual((manifest, summary), notification.verify_publication(
+                expected_session="2026-09-21", now_utc=datetime(2026, 9, 22, 21, tzinfo=UTC)))
+        replies[2] = gzip.compress(b"corrupt", mtime=0)
+        with patch.object(notification, "fetch_bytes", side_effect=replies), self.assertRaisesRegex(ValueError, "hash mismatch"):
+            notification.verify_publication()
 
     def test_aligned_publication_one_session_behind_is_stale(self):
         manifest, content, _ = publication()

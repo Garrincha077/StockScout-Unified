@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import gzip
 import hashlib
 import json
 import os
@@ -90,9 +91,18 @@ def verify_publication(
     snapshot_id = manifest["snapshotId"]
     if not re.fullmatch(ID_PATTERN, snapshot_id):
         raise ValueError("Invalid snapshot ID")
-    if manifest["snapshotPath"] != f"data/snapshots/{snapshot_id}.json":
+    permitted_paths = {
+        f"data/snapshots/{snapshot_id}.json",
+        f"data/snapshots/{snapshot_id}.json.gz",
+    }
+    if manifest["snapshotPath"] not in permitted_paths:
         raise ValueError("Invalid archive path")
     content = fetch_bytes(base + "/" + manifest["snapshotPath"])
+    if manifest["snapshotPath"].endswith(".json.gz"):
+        try:
+            content = gzip.decompress(content)
+        except (OSError, EOFError) as exc:
+            raise ValueError("Deployed compressed archive is invalid") from exc
     digest = hashlib.sha256(content).hexdigest()
     if digest != manifest["sha256"] or snapshot_id != f"{manifest['runId']}--{digest}":
         raise ValueError("Deployed archive hash mismatch")
