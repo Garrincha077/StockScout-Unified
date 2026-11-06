@@ -8,6 +8,8 @@ and hands sparse stage-change messages to Unified's existing Telegram ledger.
 from __future__ import annotations
 
 import argparse
+import gzip
+import hashlib
 import json
 import math
 import os
@@ -579,7 +581,18 @@ def save_state(path: Path, state: dict[str, Any]) -> None:
 
 def fetch_verified_universe(grid_url: str = DEFAULT_GRID_URL, mode: str = "legacy") -> tuple[dict[str, Any], list[dict[str, Any]]]:
     manifest, _summary = verify_publication(grid_url)
-    snapshot = json.loads(fetch_bytes(grid_url.rstrip("/") + "/" + manifest["snapshotPath"]))
+    encoded = fetch_bytes(grid_url.rstrip("/") + "/" + manifest["snapshotPath"])
+    if manifest["snapshotPath"].endswith(".json.gz"):
+        try:
+            encoded = gzip.decompress(encoded)
+        except (OSError, EOFError) as exc:
+            raise ValueError("Verified hourly Review gzip archive is corrupt") from exc
+    if hashlib.sha256(encoded).hexdigest() != manifest["sha256"]:
+        raise ValueError("Verified hourly Review snapshot hash mismatch")
+    snapshot = json.loads(encoded)
+    source = snapshot.get("source") or {}
+    if any(source.get(field) != manifest[field] for field in ("runId", "sessionDate")):
+        raise ValueError("Verified hourly Review snapshot source identity mismatch")
     if mode == "weekly-v2":
         if (snapshot.get("shortlists") or {}).get("schemaVersion") != "stockscout-shortlists-v2":
             raise ValueError("Weekly v2 Kell Daily shortlist is unavailable")
