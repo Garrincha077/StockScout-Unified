@@ -1,3 +1,5 @@
+import gzip
+import hashlib
 import json
 from datetime import date, timedelta
 from unittest.mock import patch
@@ -131,15 +133,61 @@ def test_weekly_v2_hourly_universe_is_only_five_kell_daily_names():
         "shortlists": {"schemaVersion": "stockscout-shortlists-v2", "kellDaily": [{"ticker": f"K{i}"} for i in range(7)]},
         "kellCandidates": [{"ticker": "LEGACY"}],
     }
-    manifest = {"snapshotPath": "data/snapshots/example.json"}
+    snapshot["source"] = {"runId": "test-run-1", "sessionDate": "2026-11-05"}
+    encoded = json.dumps(snapshot).encode()
+    manifest = {"snapshotPath": "data/snapshots/example.json", "sha256": hashlib.sha256(encoded).hexdigest(),
+                "runId": "test-run-1", "sessionDate": "2026-11-05"}
     with (
         patch.object(hourly, "verify_publication", return_value=(manifest, {})),
-        patch.object(hourly, "fetch_bytes", return_value=json.dumps(snapshot).encode()),
+        patch.object(hourly, "fetch_bytes", return_value=encoded),
     ):
         _, candidates = hourly.fetch_verified_universe("https://example.test", mode="weekly-v2")
         assert [item["ticker"] for item in candidates] == [f"K{i}" for i in range(5)]
         _, legacy = hourly.fetch_verified_universe("https://example.test", mode="legacy")
         assert [item["ticker"] for item in legacy] == ["LEGACY"]
+
+
+def test_hourly_source_accepts_lossless_gzip_and_rejects_corruption_without_sending():
+    snapshot = {
+        "source": {"runId": "2026-11-05-eod-42-1", "sessionDate": "2026-11-05"},
+        "shortlists": {"schemaVersion": "stockscout-shortlists-v2",
+                       "kellDaily": [{"ticker": "AAA"}]},
+        "kellCandidates": [{"ticker": "BBB"}],
+    }
+    raw = json.dumps(snapshot).encode()
+    manifest = {
+        "snapshotPath": "data/snapshots/test.json.gz",
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "runId": snapshot["source"]["runId"],
+        "sessionDate": snapshot["source"]["sessionDate"],
+    }
+    with (
+        patch.object(hourly, "verify_publication", return_value=(manifest, {})),
+        patch.object(hourly, "fetch_bytes", return_value=gzip.compress(raw, mtime=0)),
+    ):
+        got_manifest, candidates = hourly.fetch_verified_universe("https://example.test", mode="weekly-v2")
+        assert got_manifest == manifest
+        assert [item["ticker"] for item in candidates] == ["AAA"]
+    with (
+        patch.object(hourly, "verify_publication", return_value=(manifest, {})),
+        patch.object(hourly, "fetch_bytes", return_value=b"broken gzip"),
+    ):
+        try:
+            hourly.fetch_verified_universe("https://example.test", mode="weekly-v2")
+        except ValueError as exc:
+            assert "gzip archive is corrupt" in str(exc)
+        else:
+            raise AssertionError("Malformed compressed Review snapshot accepted")
+    with (
+        patch.object(hourly, "verify_publication", return_value=(manifest, {})),
+        patch.object(hourly, "fetch_bytes", return_value=gzip.compress(raw + b" ")),
+    ):
+        try:
+            hourly.fetch_verified_universe("https://example.test", mode="weekly-v2")
+        except ValueError as exc:
+            assert "hash mismatch" in str(exc)
+        else:
+            raise AssertionError("Changed Review snapshot bytes accepted")
 
 
 def test_new_tracked_ticker_establishes_hourly_baseline_without_alert():
