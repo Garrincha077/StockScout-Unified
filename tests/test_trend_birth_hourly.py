@@ -1,3 +1,4 @@
+import gzip
 import json
 from datetime import date, timedelta
 from unittest.mock import patch
@@ -141,6 +142,24 @@ def test_weekly_v2_hourly_universe_is_only_five_kell_daily_names():
         _, legacy = hourly.fetch_verified_universe("https://example.test", mode="legacy")
         assert [item["ticker"] for item in legacy] == ["LEGACY"]
 
+
+
+def test_weekly_v2_hourly_universe_accepts_gzip_snapshot():
+    """A packed, verified Review snapshot must not be decoded as raw UTF-8."""
+    snapshot = {
+        "shortlists": {"schemaVersion": "stockscout-shortlists-v2", "kellDaily": [{"ticker": "AAA"}]},
+        "kellCandidates": [{"ticker": "BBB"}],
+    }
+    manifest = {"snapshotPath": "data/snapshots/verified.json.gz", "snapshotEncoding": "gzip"}
+    compressed = gzip.compress(json.dumps(snapshot).encode("utf-8"))
+    with (
+        patch.object(hourly, "verify_publication", return_value=(manifest, {})),
+        patch.object(hourly, "fetch_bytes", return_value=compressed),
+    ):
+        _, weekly = hourly.fetch_verified_universe("https://example.test", mode="weekly-v2")
+        _, legacy = hourly.fetch_verified_universe("https://example.test", mode="legacy")
+    assert [row["ticker"] for row in weekly] == ["AAA"]
+    assert [row["ticker"] for row in legacy] == ["BBB"]
 
 def test_new_tracked_ticker_establishes_hourly_baseline_without_alert():
     candidates = [{"ticker": "CLOV", "trackedWatchlist": True, "trackedOnly": True}]
