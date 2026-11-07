@@ -8,6 +8,7 @@ and hands sparse stage-change messages to Unified's existing Telegram ledger.
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import math
 import os
@@ -579,7 +580,12 @@ def save_state(path: Path, state: dict[str, Any]) -> None:
 
 def fetch_verified_universe(grid_url: str = DEFAULT_GRID_URL, mode: str = "legacy") -> tuple[dict[str, Any], list[dict[str, Any]]]:
     manifest, _summary = verify_publication(grid_url)
-    snapshot = json.loads(fetch_bytes(grid_url.rstrip("/") + "/" + manifest["snapshotPath"]))
+    snapshot_bytes = fetch_bytes(grid_url.rstrip("/") + "/" + manifest["snapshotPath"])
+    # Review snapshots may be committed as lossless .json.gz when publication storage is packed.
+    # Decode transport compression only; candidate selection and hourly alert policy are unchanged.
+    if snapshot_bytes.startswith(b"\x1f\x8b"):
+        snapshot_bytes = gzip.decompress(snapshot_bytes)
+    snapshot = json.loads(snapshot_bytes)
     if mode == "weekly-v2":
         if (snapshot.get("shortlists") or {}).get("schemaVersion") != "stockscout-shortlists-v2":
             raise ValueError("Weekly v2 Kell Daily shortlist is unavailable")
