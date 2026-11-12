@@ -1,6 +1,6 @@
 # Managed by the ChatGPT morning watchdog.
 targets=gridview
-session_date=2026-11-06
+session_date=2026-11-11
 notify=true
-reason=2026-11-07-exact-unified-review-kell-vercel-ready-verified-once-only-gridview
-requested_at=2026-11-07T09:36:37.468Z
+reason=2026-11-12-exact-session-unified-review-kell-vercel-verified-no-delivery-ledger
+requested_at=2026-11-12T09:32:37.169Z
