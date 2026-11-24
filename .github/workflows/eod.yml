@@ -92,6 +92,11 @@ jobs:
         env:
           REQUESTED_DATE: ${{ inputs.scan_date }}
         run: |
+          # Scheduled runs may be created after New York midnight. Pin only
+          # scheduled runs to the latest actual exchange close, not wall-clock today.
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ] && [ -z "$REQUESTED_DATE" ]; then
+            REQUESTED_DATE="$(python -c 'from stockscout_eod.session import latest_completed_session; print(latest_completed_session())')"
+          fi
           args=(guard --active-manifest https://garrincha077.github.io/StockScout-Unified/data/manifest.json --github-output "$GITHUB_OUTPUT")
           if [ -n "$REQUESTED_DATE" ]; then args+=(--requested-date "$REQUESTED_DATE"); fi
           python -m stockscout_eod.cli "${args[@]}"
