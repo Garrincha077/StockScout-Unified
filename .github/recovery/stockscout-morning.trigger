@@ -1,6 +1,6 @@
 # Managed by the ChatGPT morning watchdog.
-targets=gridview
-session_date=2026-11-20
+targets=eod
+session_date=2026-11-23
 notify=true
-reason=verified-2026-11-20-unified-review-kell-vercel-live-semantic-equality-ledger-missing
-requested_at=2026-11-21T09:33:42Z
+reason=scheduled-45333051204-market_not_closed-skipped-publication-and-notify
+requested_at=2026-11-24T08:59:12Z
