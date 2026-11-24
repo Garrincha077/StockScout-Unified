@@ -49,3 +49,17 @@ def test_guard_skips_holiday_and_already_active_session(tmp_path) -> None:
     output = tmp_path / "github-output.txt"
     write_github_outputs(decision, output)
     assert "should_run=false" in output.read_text(encoding="utf-8")
+
+
+def test_delayed_cron_after_new_york_midnight_uses_last_close(tmp_path) -> None:
+    now = datetime(2026, 11, 24, 5, 24, tzinfo=UTC)
+    target = date.fromisoformat(latest_completed_session(now))
+    assert target == date(2026, 11, 23)
+    assert decide_session(now_utc=now).reason == "market_not_closed"
+    decision = decide_session(now_utc=now, requested_date=target)
+    assert decision.should_run and decision.session_date == "2026-11-23"
+
+    manifest = tmp_path / "active.json"
+    manifest.write_text(json.dumps({"sessionDate": target.isoformat(), "status": "healthy"}))
+    duplicate = decide_session(now_utc=now, requested_date=target, active_manifest=str(manifest))
+    assert not duplicate.should_run and duplicate.reason == "session_already_active"
